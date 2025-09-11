@@ -33,7 +33,7 @@ def init_database(db_name='app.db'):
         CREATE TABLE IF NOT EXISTS messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             author INTEGER NOT NULL,
-            chat_id INTEGER NOT NULL,  # can be user id or group id
+            chat_id INTEGER NOT NULL,  -- can be user id or group id
             group BOOLEAN DEFAULT 0,
             content TEXT NOT NULL UNIQUE,
             edited BOOLEAN DEFAULT 0,
@@ -82,7 +82,6 @@ def create_group(conn, name, description=None):
         INSERT INTO groups (name, description)
         VALUES (?, ?)
     ''', (name, description))
-    conn.commit()
     return cursor.lastrowid
 
 def get_group(conn, group_id):
