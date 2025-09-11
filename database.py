@@ -34,7 +34,7 @@ def init_database(db_name='app.db'):
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             author INTEGER NOT NULL,
             chat_id INTEGER NOT NULL,  -- can be user id or group id
-            group BOOLEAN DEFAULT 0,
+            is_group BOOLEAN DEFAULT 0,  -- ⚠️ group -> is_group
             content TEXT NOT NULL UNIQUE,
             edited BOOLEAN DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -94,7 +94,7 @@ def create_message(conn, author, chat_id, content, group=False):
     """Create a new message in the messages table."""
     cursor = conn.cursor()
     cursor.execute('''
-        INSERT INTO messages (author, chat_id, content, group)
+        INSERT INTO messages (author, chat_id, content, is_group)  -- ⚠️ group -> is_group
         VALUES (?, ?, ?, ?)
     ''', (author, chat_id, content, int(group)))
     conn.commit()
@@ -105,7 +105,7 @@ def get_messages(conn, chat_id, group=False, limit=50):
     cursor = conn.cursor()
     cursor.execute('''
         SELECT * FROM messages
-        WHERE chat_id = ? AND group = ?
+        WHERE chat_id = ? AND is_group = ?  -- ⚠️ group → is_group
         ORDER BY created_at DESC
         LIMIT ?
     ''', (chat_id, int(group), limit))
