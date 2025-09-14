@@ -1,4 +1,4 @@
-from flask import Flask, request
+from flask import Flask, request, render_template
 import database
 import hashlib
 
@@ -37,6 +37,10 @@ def login():
     if user and user[3] == hashlib.sha256(data['password'].encode()).hexdigest():
         return {'message': 'Login successful', 'token': user[4]}, 200
     return {'error': 'Invalid credentials'}, 401
+
+@app.route('/')
+def home():
+    return render_template('home.html')
 
 def run():
     app.run()
