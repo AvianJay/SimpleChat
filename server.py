@@ -2,7 +2,6 @@ from flask import Flask, request, render_template
 from flask_socketio import SocketIO, emit
 import database
 import hashlib
-import sqlite3
 
 database.init_database()
 conn = database.create_connection()
