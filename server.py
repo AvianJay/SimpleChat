@@ -22,33 +22,38 @@ def get_request_data(request):
         reqdata = request.args.copy()
     return reqdata
 
-@app.route('/register', methods=['GET', 'POST'])
+@app.route('/register')
 def register():
-    if request.method == 'GET':
-        return render_template('register.html')
-    else:
-        data = get_request_data(request)
-        if not data or 'name' not in data or 'email' not in data or 'password' not in data:
-            return {'error': 'Invalid input'}, 400
-        if database.get_user(conn, email=data['email']) is not None:
-            return {'error': 'Email already registered'}, 400
-        if database.get_user(conn, user_name=data['name']) is not None:
-            return {'error': 'Username already taken'}, 400
-        user_id = database.create_user(conn, data['name'], data['email'], data['password'])
-        return {'message': 'User registered', 'user_id': user_id}, 201
+    return render_template('register.html')
 
-@app.route('/login', methods=['GET', 'POST'])
+@app.route('/api/register', methods=['POST'])
+def api_register():
+    data = get_request_data(request)
+    if not data or 'name' not in data or 'email' not in data or 'password' not in data:
+        return {'error': 'Invalid input'}, 400
+    if database.get_user(conn, email=data['email']) is not None:
+        return {'error': 'Email already registered'}, 400
+    if database.get_user(conn, user_name=data['name']) is not None:
+        return {'error': 'Username already taken'}, 400
+    user_id = database.create_user(conn, data['name'], data['email'], data['password'])
+    return {'message': 'User registered', 'user_id': user_id}, 201
+
+@app.route('/login')
 def login():
-    if request.method == 'GET':
-        return render_template('login.html')
-    else:
-        data = get_request_data(request)
-        if not data or 'username' not in data or 'password' not in data:
-            return {'error': 'Invalid input'}, 400
-        user = database.get_user(conn, user_name=data['username'])
-        if user and user[3] == hashlib.sha256(data['password'].encode()).hexdigest():
-            return {'message': 'Login successful', 'token': user[4]}, 200
-        return {'error': 'Invalid credentials'}, 401
+    return render_template('login.html')
+
+@app.route('/api/login', methods=['POST'])
+def api_login():
+    data = get_request_data(request)
+    if not data or 'email' not in data or 'password' not in data:
+        return {'error': 'Invalid input'}, 400
+    user = database.get_user(conn, email=data['email'])
+    if user is None:
+        return {'error': 'User not found'}, 404
+    hashed_password = hashlib.sha256(data['password'].encode()).hexdigest()
+    if user[3] != hashed_password:
+        return {'error': 'Incorrect password'}, 401
+    return {'message': 'Login successful', 'token': user[4]}, 200
 
 @app.route('/')
 def home():
