@@ -62,11 +62,13 @@ def create_user(conn, name, email, password, token=None):
     conn.commit()
     return cursor.lastrowid
 
-def get_user(conn, user_id=None, email=None, token=None):
+def get_user(conn, user_id=None, user_name=None, email=None, token=None):
     """Retrieve a user from the users table."""
     cursor = conn.cursor()
     if user_id:
         cursor.execute('SELECT * FROM users WHERE id = ?', (user_id,))
+    elif user_name:
+        cursor.execute('SELECT * FROM users WHERE name = ?', (user_name,))
     elif email:
         cursor.execute('SELECT * FROM users WHERE email = ?', (email,))
     elif token:
