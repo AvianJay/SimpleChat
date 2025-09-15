@@ -132,3 +132,26 @@ def get_messages(conn, chat_id, group=False, limit=50):
         LIMIT ?
     ''', (chat_id, int(group), limit))
     return cursor.fetchall()
+
+def friend(conn, user_id, friend_id, status='pending'):
+    """Create a friendship or update its status."""
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO friendships (user_id, friend_id, status)
+        VALUES (?, ?, ?)
+        ON CONFLICT(user_id, friend_id) DO UPDATE SET status=excluded.status
+    ''', (user_id, friend_id, status))
+    conn.commit()
+    return cursor.lastrowid
+
+def friend_status(conn, user_id, friend_id):
+    """Get the status of a friendship."""
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT status FROM friendships
+        WHERE user_id = ? AND friend_id = ?
+    ''', (user_id, friend_id))
+    row = cursor.fetchone()
+    if row:
+        return row[0]
+    return None

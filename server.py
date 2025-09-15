@@ -2,6 +2,7 @@ from flask import Flask, request, render_template
 from flask_socketio import SocketIO, emit
 import database
 import hashlib
+import sqlite3
 
 database.init_database()
 conn = database.create_connection()
@@ -54,6 +55,25 @@ def api_login():
     if user[3] != hashed_password:
         return {'error': 'Incorrect password'}, 401
     return {'message': 'Login successful', 'token': user[4]}, 200
+
+@app.route('/api/friend_request', methods=['POST'])
+def api_friend_request():
+    data = get_request_data(request)
+    if not data or 'token' not in data or 'friend_id' not in data:
+        return {'error': 'Invalid input'}, 400
+    user = database.get_user(conn, token=data['token'])
+    if user is None:
+        return {'error': 'Invalid token'}, 401
+    friend_status = database.friend_status(conn, user[0], data['friend_id'])
+    if friend_status == 'accepted':
+        return {'error': 'Already friends'}, 400
+    elif friend_status == 'pending':
+        return {'error': 'Friend request already sent'}, 400
+    elif friend_status == 'blocked':
+        return {'error': 'You are blocked by this user'}, 400
+    else:
+        database.friend(conn, user[0], data['friend_id'], status='pending')
+        return {'message': 'Friend request sent'}, 200
 
 @app.route('/')
 def home():
