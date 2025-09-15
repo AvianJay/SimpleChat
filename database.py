@@ -30,6 +30,16 @@ def init_database(db_name='app.db'):
     ''')
     
     cursor.execute('''
+        CREATE TABLE IF NOT EXISTS group_members (
+            group_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            role TEXT DEFAULT 'member',  -- member, admin owner
+            joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (group_id, user_id)
+        )
+    ''')
+    
+    cursor.execute('''
         CREATE TABLE IF NOT EXISTS messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             author INTEGER NOT NULL,
@@ -38,6 +48,16 @@ def init_database(db_name='app.db'):
             content TEXT NOT NULL UNIQUE,
             edited BOOLEAN DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS friendships (
+            user_id INTEGER NOT NULL,
+            friend_id INTEGER NOT NULL,
+            status TEXT DEFAULT 'pending',  -- pending, accepted, blocked
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (user_id, friend_id)
         )
     ''')
 
