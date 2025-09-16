@@ -1,6 +1,5 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,9 +7,8 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
     <script src="{{ url_for('static', filename='js/user.js') }}" defer></script>
 </head>
-
 <body>
-    <form id="register-form" method="POST" action="/register">
+    <form id="register_form" onsubmit="event.preventDefault(); register();">
         <div class="register-container">
             <h2>註冊</h2>
             <div class="form-group">
@@ -25,13 +23,13 @@
             <div class="form-group">
                 <input type="password" id="reconfirmpassword" name="reconfirm_password" placeholder="再次輸入密碼" required>
             </div>
-            <button id="register-button" type="submit" onsubmit="register()">註冊</button>
+            <button id="register-button" type="submit">註冊</button>
         </div>
     </form>
-    <br></br>
+    <br>
+    <br>
     <div class="login-redirect">
         <p>已經有帳號了嗎？<a href="/login">點此登入</a></p>
     </div>
 </body>
-
 </html>
