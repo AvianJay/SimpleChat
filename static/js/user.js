@@ -16,13 +16,30 @@ function login() {
                 alert('Login failed: ' + data.error);
             }
         });
-    // todo
 }
 function logout() {
-    // todo
+    localStorage.removeItem('token');
+    window.location.href = '/login';
 }
 function register() {
-    // todo
+    username = document.getElementById('username').value;
+    password = document.getElementById('password').value;
+    email = document.getElementById('email').value;
+    fetch('/api/register', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ username: username, password: password, email: email })
+    }).then(response => response.json())
+        .then(data => {
+            if (data.message) {
+                alert('Registration successful! Please log in.');
+                window.location.href = '/login';
+            } else {
+                alert('Registration failed: ' + data.error);
+            }
+        });
 }
 function resetPassword() {
     // todo
