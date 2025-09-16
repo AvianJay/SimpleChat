@@ -98,7 +98,7 @@ def api_get_user(user_id):
 
 @app.route('/')
 def home():
-    return render_template('index.html')
+    return render_template('home.html')
 
 def run():
     app.run()
