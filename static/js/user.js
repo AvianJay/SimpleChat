@@ -29,7 +29,7 @@ function register() {
         alert('Passwords do not match!');
         return;
     }
-    email = document.getElementById('gmail').value;
+    email = document.getElementById('email').value;
     fetch('/api/register', {
         method: 'POST',
         headers: {
