@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>註冊</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='/css/REGISTERPageStyles.css') }}">
+    <script src="{{ url_for('static', filename='/js/user.js') }}" defer></script>
+</head>
+
+<body>
+    <div class="register-container">
+        <h2>註冊</h2>
+        <div class="form-group">
+            <input type="text" id="gmail" name="gmail" placeholder="電子郵件" required>
+        </div>
+        <div class="form-group">
+            <input type="text" id="username" name="username" placeholder="輸入帳號" required>
+        </div>
+        <div class="form-group">
+            <input type="password" id="password" name="password" placeholder="輸入密碼" required>
+        </div>
+        <div class="form-group">
+            <input type="password" id="reconfirmpassword" name="reconfirmpassword" placeholder="再次輸入密碼" required>
+        </div>
+        <button id="register-button" onclick="register()">註冊</button>
+    </div>
+    <br></br>
+    <div class="login-redirect">
+        <p>已經有帳號了嗎？<a href="/login">點此登入</a></p>
+    </div>
+</body>
+
+</html>
