@@ -1,12 +1,35 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>登入</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-    <script src="{{ url_for('static', filename='user.js') }}" defer></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <script src="{{ url_for('static', filename='js/user.js') }}" defer></script>
+    <script>
+        // check if user is already logged in
+        document.addEventListener('DOMContentLoaded', function () {
+            const token = localStorage.getItem('token');
+            if (token) {
+                fetch('/api/user/me', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ token: token })
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.user) {
+                            window.location.href = '/chat';
+                        }
+                    });
+            }
+        });
+    </script>
 </head>
+
 <body>
     <div class="login-container">
         <h2>登入</h2>
@@ -20,4 +43,5 @@
         </div>
         <button id="login-button" on_click="login()">登入</button>
     </div>
+
 </html>
