@@ -155,3 +155,14 @@ def friend_status(conn, user_id, friend_id):
     if row:
         return row[0]
     return None
+
+def get_friends(conn, user_id):
+    """Retrieve a list of friends for a user."""
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT u.id, u.name, u.email, f.status
+        FROM users u
+        JOIN friendships f ON u.id = f.friend_id
+        WHERE f.user_id = ? AND f.status = 'accepted'
+    ''', (user_id,))
+    return cursor.fetchall()
