@@ -47,7 +47,7 @@ def api_login():
     data = get_request_data(request)
     if not data or 'username' not in data or 'password' not in data:
         return {'error': 'Invalid input'}, 400
-    user = database.get_user(conn, email=data['email'])
+    user = database.get_user(conn, user_name=data['username'])
     if user is None:
         return {'error': 'User not found'}, 404
     hashed_password = hashlib.sha256(data['password'].encode()).hexdigest()
