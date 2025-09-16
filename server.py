@@ -55,6 +55,23 @@ def api_login():
         return {'error': 'Incorrect password'}, 401
     return {'message': 'Login successful', 'token': user[4]}, 200
 
+@app.route('/api/reset_password', methods=['POST'])
+def api_reset_password():
+    data = get_request_data(request)
+    if not data or 'token' not in data or 'old_password' not in data or 'new_password' not in data:
+        return {'error': 'Invalid input'}, 400
+    user = database.get_user(conn, token=data['token'])
+    if user is None:
+        return {'error': 'Invalid token'}, 401
+    hashed_old_password = hashlib.sha256(data['old_password'].encode()).hexdigest()
+    if user[3] != hashed_old_password:
+        return {'error': 'Incorrect old password'}, 401
+    new_hashed_password = hashlib.sha256(data['new_password'].encode()).hexdigest()
+    cursor = conn.cursor()
+    cursor.execute('UPDATE users SET password = ? WHERE email = ?', (new_hashed_password, data['email']))
+    conn.commit()
+    return {'message': 'Password reset successful'}, 200
+
 @app.route('/api/friend_request', methods=['POST'])
 def api_friend_request():
     data = get_request_data(request)

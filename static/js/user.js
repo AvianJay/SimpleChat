@@ -42,5 +42,22 @@ function register() {
         });
 }
 function resetPassword() {
-    // todo
+    old_password = document.getElementById('old-password').value;
+    new_password = document.getElementById('new-password').value;
+    const token = localStorage.getItem('token');
+    fetch('/api/reset_password', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ token: token, old_password: old_password, new_password: new_password })
+    }).then(response => response.json())
+        .then(data => {
+            if (data.message) {
+                alert('Password reset successful! Please log in again.');
+                logout();
+            } else {
+                alert('Password reset failed: ' + data.error);
+            }
+        });
 }
