@@ -1,6 +1,6 @@
 function login() {
-    username = document.getElementById('username').value;
-    password = document.getElementById('password').value;
+    const username = document.getElementById('username').value;
+    const password = document.getElementById('password').value;
     fetch('/api/login', {
         method: 'POST',
         headers: {
@@ -22,8 +22,8 @@ function logout() {
     window.location.href = '/login';
 }
 function register() {
-    username = document.getElementById('username').value;
-    password = document.getElementById('password').value;
+    const username = document.getElementById('username').value;
+    const password = document.getElementById('password').value;
     email = document.getElementById('email').value;
     fetch('/api/register', {
         method: 'POST',
