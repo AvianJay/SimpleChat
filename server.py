@@ -45,7 +45,7 @@ def login():
 @app.route('/api/login', methods=['POST'])
 def api_login():
     data = get_request_data(request)
-    if not data or 'email' not in data or 'password' not in data:
+    if not data or 'username' not in data or 'password' not in data:
         return {'error': 'Invalid input'}, 400
     user = database.get_user(conn, email=data['email'])
     if user is None:
