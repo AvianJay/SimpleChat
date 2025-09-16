@@ -66,7 +66,7 @@ def init_database(db_name='app.db'):
 
 def create_connection(db_name='app.db'):
     """Create a database connection to the SQLite database."""
-    conn = sqlite3.connect(db_name)
+    conn = sqlite3.connect(db_name, check_same_thread=False)
     return conn
 
 def create_user(conn, name, email, password, token=None):
