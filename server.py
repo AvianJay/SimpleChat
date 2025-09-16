@@ -74,6 +74,28 @@ def api_friend_request():
         database.friend(conn, user[0], data['friend_id'], status='pending')
         return {'message': 'Friend request sent'}, 200
 
+@app.route('/api/user/<user_id>', methods=['POST'])
+def api_get_user(user_id):
+    data = get_request_data(request)
+    if not data or 'token' not in data:
+        return {'error': 'Invalid input'}, 400
+    if not verify_user(data['token']):
+        return {'error': 'Invalid token'}, 401
+    if user_id == 'me':
+        user = database.get_user(conn, token=data['token'])
+    else:
+        user = database.get_user(conn, user_id=user_id)
+    if user is None:
+        return {'error': 'User not found'}, 404
+    user_data = {
+        'id': user[0],
+        'name': user[1],
+        'email': user[2],
+        'is_admin': bool(user[5]),
+        'created_at': user[6]
+    }
+    return {'user': user_data}, 200
+
 @app.route('/')
 def home():
     return render_template('index.html')
