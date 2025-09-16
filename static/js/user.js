@@ -24,7 +24,12 @@ function logout() {
 function register() {
     const username = document.getElementById('username').value;
     const password = document.getElementById('password').value;
-    email = document.getElementById('email').value;
+    const reconfirm_password = document.getElementById('reconfirmpassword').value;
+    if (password !== reconfirm_password) {
+        alert('Passwords do not match!');
+        return;
+    }
+    email = document.getElementById('gmail').value;
     fetch('/api/register', {
         method: 'POST',
         headers: {
