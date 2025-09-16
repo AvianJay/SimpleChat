@@ -16,4 +16,14 @@ function login() {
                 alert('Login failed: ' + data.error);
             }
         });
+    // todo
+}
+function logout() {
+    // todo
+}
+function register() {
+    // todo
+}
+function resetPassword() {
+    // todo
 }
