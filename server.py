@@ -29,13 +29,13 @@ def register():
 @app.route('/api/register', methods=['POST'])
 def api_register():
     data = get_request_data(request)
-    if not data or 'name' not in data or 'email' not in data or 'password' not in data:
+    if not data or 'username' not in data or 'email' not in data or 'password' not in data:
         return {'error': 'Invalid input'}, 400
     if database.get_user(conn, email=data['email']) is not None:
         return {'error': 'Email already registered'}, 400
-    if database.get_user(conn, user_name=data['name']) is not None:
+    if database.get_user(conn, user_name=data['username']) is not None:
         return {'error': 'Username already taken'}, 400
-    user_id = database.create_user(conn, data['name'], data['email'], data['password'])
+    user_id = database.create_user(conn, data['username'], data['email'], data['password'])
     return {'message': 'User registered', 'user_id': user_id}, 201
 
 @app.route('/login')
