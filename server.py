@@ -125,6 +125,10 @@ def api_get_user(user_id):
     }
     return {'user': user_data}, 200
 
+@app.route('/chat')
+def chat():
+    return render_template('chat.html')
+
 @app.route('/')
 def home():
     return render_template('home.html')

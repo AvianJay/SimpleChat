@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -20,42 +21,42 @@
                     },
                     body: JSON.stringify({ token: token })
                 })
-                .then(response => response.json())
-                .then(data => {
-                    if (!data.user) {
-                        window.location.href = '/login';
-                    } else {
-                        document.getElementById('welcome-message').innerText = `歡迎, ${data.user.username}`;
-                        initSocket(token);
-                    }
-                });
+                    .then(response => response.json())
+                    .then(data => {
+                        if (!data.user) {
+                            window.location.href = '/login';
+                        } else {
+                            document.getElementById('welcome-message').innerText = `歡迎, ${data.user.username}`;
+                            initSocket(token);
+                        }
+                    });
             }
         });
 
         function initSocket(token) {
             const socket = io();
 
-            socket.on('connect', function() {
+            socket.on('connect', function () {
                 socket.emit('authenticate', { token: token });
             });
 
-            socket.on('authenticated', function() {
+            socket.on('authenticated', function () {
                 console.log('Authenticated successfully');
             });
 
-            socket.on('unauthorized', function(msg) {
+            socket.on('unauthorized', function (msg) {
                 console.log('Unauthorized:', msg);
                 window.location.href = '/login';
             });
 
-            socket.on('new_message', function(msg) {
+            socket.on('new_message', function (msg) {
                 const messagesDiv = document.getElementById('messages');
                 const messageElem = document.createElement('div');
                 messageElem.innerText = `${msg.author}: ${msg.content}`;
                 messagesDiv.appendChild(messageElem);
             });
 
-            document.getElementById('send-button').addEventListener('click', function() {
+            document.getElementById('send-button').addEventListener('click', function () {
                 const messageInput = document.getElementById('message-input');
                 const message = messageInput.value;
                 if (message.trim() !== '') {
@@ -72,6 +73,7 @@
         }
     </script>
 </head>
+
 <body>
     <div class="chat-container">
         <h2 id="welcome-message">歡迎</h2>
@@ -80,4 +82,5 @@
         <button id="send-button">發送</button>
     </div>
 </body>
+
 </html>
