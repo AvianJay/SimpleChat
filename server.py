@@ -53,7 +53,7 @@ def api_login():
     hashed_password = hashlib.sha256(data['password'].encode()).hexdigest()
     if user[3] != hashed_password:
         return {'error': 'Incorrect password'}, 401
-    return {'message': 'Login successful', 'token': user[4]}, 200
+    return {'message': 'Login successful', 'token': user[5]}, 200
 
 @app.route('/api/reset_password', methods=['POST'])
 def api_reset_password():
