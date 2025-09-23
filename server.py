@@ -2,9 +2,11 @@ from flask import Flask, request, render_template
 from flask_socketio import SocketIO, emit
 import database
 import hashlib
+import os
+from config import config
 
-database.init_database()
-conn = database.create_connection()
+database.init_database(config("database_path"))
+conn = database.create_connection(config("database_path"))
 app = Flask(__name__)
 socketio = SocketIO(app)
 
@@ -134,7 +136,16 @@ def home():
     return render_template('home.html')
 
 def run():
-    app.run()
+    if config("ssl"):
+        if os.path.exists(config("ssl_cert")) or not os.path.exists(config("ssl_key")):
+            context = (config("ssl_cert"), config("ssl_key"))
+            app.run(host=config("host"), port=config("port"), ssl_context=context, debug=config("debug"))
+        else:
+            print("SSL is enabled but cert or key file does not exist.")
+            print("Running without SSL...")
+            app.run(host=config("host"), port=config("port"), debug=config("debug"))
+    else:
+        app.run(host=config("host"), port=config("port"), debug=config("debug"))
 
 # idk
 if __name__ == "__main__":

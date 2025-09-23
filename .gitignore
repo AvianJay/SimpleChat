@@ -208,3 +208,4 @@ __marimo__/
 
 app.db
 *.out
+config.json
