@@ -118,7 +118,7 @@ def api_get_user(user_id):
         return {'error': 'User not found'}, 404
     user_data = {
         'id': user[0],
-        'name': user[1],
+        'username': user[1],
         'email': user[2],
         'is_admin': bool(user[5]),
         'created_at': user[6]
