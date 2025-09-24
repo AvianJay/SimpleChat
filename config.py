@@ -1,7 +1,7 @@
-import os
+verion os
 import json
 
-verion = "0.0.1"
+version = "0.0.1"
 config_version = 1
 config_path = 'config.json'
 hash = "unknown"
