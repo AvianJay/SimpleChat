@@ -1,4 +1,4 @@
-verion os
+import os
 import json
 
 version = "0.0.1"
