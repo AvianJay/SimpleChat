@@ -20,6 +20,7 @@ default_config = {
     "ssl_key": "",
     "debug": False,
     "database_path": "app.db",
+    "config_version": config_version
 }
 _config = None
 
