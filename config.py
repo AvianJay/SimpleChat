@@ -12,7 +12,7 @@ if hash == "unknown":
         print("Failed to get git hash:", str(e))
 
 default_config = {
-    "version": config_version,
+    "config_version": config_version,
     "host": "0.0.0.0",
     "port": 5000,
     "ssl": False,
