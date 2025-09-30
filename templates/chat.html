@@ -8,78 +8,328 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
     <script src="{{ url_for('static', filename='js/chat.js') }}" defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+        .chat-container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+        }
+        .messages {
+            height: 400px;
+            border: 1px solid #ddd;
+            padding: 10px;
+            overflow-y: auto;
+            margin: 20px 0;
+            background-color: #f9f9f9;
+        }
+        .message {
+            margin-bottom: 10px;
+            padding: 8px;
+            background-color: white;
+            border-radius: 5px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+        .message-author {
+            font-weight: bold;
+            color: #2c5aa0;
+        }
+        .input-container {
+            display: flex;
+            gap: 10px;
+        }
+        #message-input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        #send-button {
+            padding: 10px 20px;
+            background-color: #2c5aa0;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        #send-button:hover {
+            background-color: #1e3f73;
+        }
+        #send-button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .error-message {
+            color: red;
+            margin: 10px 0;
+            display: none;
+        }
+        .loading {
+            display: none;
+            color: #666;
+        }
+    </style>
     <script>
-        document.addEventListener('DOMContentLoaded', function () {
-            const token = localStorage.getItem('token');
-            if (!token) {
-                window.location.href = '/login';
-            } else {
-                fetch('/api/user/me', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ token: token })
-                })
-                    .then(response => response.json())
-                    .then(data => {
-                        if (!data.user) {
-                            window.location.href = '/login';
-                        } else {
-                            document.getElementById('welcome-message').innerText = `歡迎, ${data.user.username}`;
-                            initSocket(token);
-                        }
-                    });
+        // 改進版聊天應用
+        class ChatApp {
+            constructor() {
+                this.socket = null;
+                this.token = null;
+                this.maxMessageLength = 1000;
+                this.reconnectAttempts = 0;
+                this.maxReconnectAttempts = 5;
             }
-        });
 
-        function initSocket(token) {
-            const socket = io();
+            async init() {
+                try {
+                    await this.checkAuthentication();
+                    this.initSocket();
+                    this.setupEventListeners();
+                } catch (error) {
+                    this.handleError('初始化失敗', error);
+                }
+            }
 
-            socket.on('connect', function () {
-                socket.emit('authenticate', { token: token });
-            });
+            async checkAuthentication() {
+                this.token = localStorage.getItem('token');
+                if (!this.token) {
+                    this.redirectToLogin();
+                    return;
+                }
 
-            socket.on('authenticated', function () {
-                console.log('Authenticated successfully');
-            });
-
-            socket.on('unauthorized', function (msg) {
-                console.log('Unauthorized:', msg);
-                window.location.href = '/login';
-            });
-
-            socket.on('new_message', function (msg) {
-                const messagesDiv = document.getElementById('messages');
-                const messageElem = document.createElement('div');
-                messageElem.innerText = `${msg.author}: ${msg.content}`;
-                messagesDiv.appendChild(messageElem);
-            });
-
-            document.getElementById('send-button').addEventListener('click', function () {
-                const messageInput = document.getElementById('message-input');
-                const message = messageInput.value;
-                if (message.trim() !== '') {
-                    fetch('/api/message/send', {
+                try {
+                    this.showLoading(true);
+                    const response = await fetch('/api/user/me', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
                         },
-                        body: JSON.stringify({ token: token, content: message })
+                        body: JSON.stringify({ token: this.token })
                     });
-                    messageInput.value = '';
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+
+                    const data = await response.json();
+                    if (!data.user) {
+                        this.redirectToLogin();
+                        return;
+                    }
+
+                    // 安全地設置用戶名（防止 XSS）
+                    const welcomeElement = document.getElementById('welcome-message');
+                    welcomeElement.textContent = `歡迎, ${this.escapeHtml(data.user.username)}`;
+                    
+                } catch (error) {
+                    console.error('Authentication check failed:', error);
+                    this.handleError('身份驗證失敗，請重新登入');
+                    setTimeout(() => this.redirectToLogin(), 2000);
+                } finally {
+                    this.showLoading(false);
                 }
-            });
+            }
+
+            initSocket() {
+                this.socket = io({
+                    timeout: 20000,
+                    reconnection: true,
+                    reconnectionDelay: 1000,
+                    reconnectionAttempts: this.maxReconnectAttempts
+                });
+
+                this.socket.on('connect', () => {
+                    console.log('Connected to server');
+                    this.socket.emit('authenticate', { token: this.token });
+                    this.reconnectAttempts = 0;
+                    this.hideError();
+                });
+
+                this.socket.on('authenticated', () => {
+                    console.log('Authenticated successfully');
+                    this.enableChatInterface(true);
+                });
+
+                this.socket.on('unauthorized', (msg) => {
+                    console.log('Unauthorized:', msg);
+                    this.handleError('認證失敗，請重新登入');
+                    setTimeout(() => this.redirectToLogin(), 2000);
+                });
+
+                this.socket.on('new_message', (msg) => {
+                    this.displayMessage(msg);
+                });
+
+                this.socket.on('disconnect', () => {
+                    console.log('Disconnected from server');
+                    this.enableChatInterface(false);
+                    this.handleError('連線中斷，嘗試重新連線中...');
+                });
+
+                this.socket.on('connect_error', (error) => {
+                    console.error('Connection error:', error);
+                    this.reconnectAttempts++;
+                    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+                        this.handleError('無法連接到服務器，請檢查網路連線');
+                    }
+                });
+            }
+
+            setupEventListeners() {
+                const sendButton = document.getElementById('send-button');
+                const messageInput = document.getElementById('message-input');
+
+                sendButton.addEventListener('click', () => this.sendMessage());
+                
+                messageInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        this.sendMessage();
+                    }
+                });
+
+                messageInput.addEventListener('input', (e) => {
+                    this.updateCharacterCount(e.target.value.length);
+                });
+            }
+
+            async sendMessage() {
+                const messageInput = document.getElementById('message-input');
+                const message = messageInput.value.trim();
+
+                if (!this.validateMessage(message)) {
+                    return;
+                }
+
+                try {
+                    const response = await fetch('/api/message/send', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ 
+                            token: this.token, 
+                            content: this.escapeHtml(message)
+                        })
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`Failed to send message: ${response.status}`);
+                    }
+
+                    messageInput.value = '';
+                    this.hideError();
+                    
+                } catch (error) {
+                    console.error('Send message error:', error);
+                    this.handleError('發送訊息失敗，請重試');
+                }
+            }
+
+            validateMessage(message) {
+                if (message === '') {
+                    this.handleError('請輸入訊息內容');
+                    return false;
+                }
+                
+                if (message.length > this.maxMessageLength) {
+                    this.handleError(`訊息長度不能超過 ${this.maxMessageLength} 個字符`);
+                    return false;
+                }
+
+                return true;
+            }
+
+            displayMessage(msg) {
+                const messagesDiv = document.getElementById('messages');
+                const messageElem = document.createElement('div');
+                messageElem.className = 'message';
+                
+                const authorElem = document.createElement('span');
+                authorElem.className = 'message-author';
+                authorElem.textContent = this.escapeHtml(msg.author) + ': ';
+                
+                const contentElem = document.createElement('span');
+                contentElem.textContent = this.escapeHtml(msg.content);
+                
+                messageElem.appendChild(authorElem);
+                messageElem.appendChild(contentElem);
+                messagesDiv.appendChild(messageElem);
+                
+                // 自動滾動到最新訊息
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            }
+
+            enableChatInterface(enabled) {
+                const sendButton = document.getElementById('send-button');
+                const messageInput = document.getElementById('message-input');
+                
+                sendButton.disabled = !enabled;
+                messageInput.disabled = !enabled;
+                
+                if (enabled) {
+                    messageInput.placeholder = '輸入訊息...';
+                } else {
+                    messageInput.placeholder = '連線中斷...';
+                }
+            }
+
+            updateCharacterCount(length) {
+                // 可以添加字符計數顯示
+                const remaining = this.maxMessageLength - length;
+                if (remaining < 100) {
+                    // 顯示剩餘字符數警告
+                    console.log(`剩餘字符: ${remaining}`);
+                }
+            }
+
+            handleError(message, error = null) {
+                console.error(message, error);
+                const errorElement = document.getElementById('error-message');
+                errorElement.textContent = message;
+                errorElement.style.display = 'block';
+            }
+
+            hideError() {
+                const errorElement = document.getElementById('error-message');
+                errorElement.style.display = 'none';
+            }
+
+            showLoading(show) {
+                const loadingElement = document.getElementById('loading');
+                loadingElement.style.display = show ? 'block' : 'none';
+            }
+
+            redirectToLogin() {
+                localStorage.removeItem('token');
+                window.location.href = '/login';
+            }
+
+            escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
         }
+
+        // 初始化應用
+        document.addEventListener('DOMContentLoaded', () => {
+            const chatApp = new ChatApp();
+            chatApp.init();
+        });
     </script>
 </head>
 
 <body>
     <div class="chat-container">
         <h2 id="welcome-message">歡迎</h2>
+        <div id="error-message" class="error-message"></div>
+        <div id="loading" class="loading">載入中...</div>
         <div id="messages" class="messages"></div>
-        <input type="text" id="message-input" placeholder="輸入訊息...">
-        <button id="send-button">發送</button>
+        <div class="input-container">
+            <input type="text" id="message-input" placeholder="輸入訊息..." maxlength="1000">
+            <button id="send-button">發送</button>
+        </div>
     </div>
 </body>
 
