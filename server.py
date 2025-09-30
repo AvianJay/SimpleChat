@@ -9,14 +9,19 @@ from config import config
 database.init_database(config("database_path"))
 conn = database.create_connection(config("database_path"))
 app = Flask(__name__)
-socketio = SocketIO(app)
+# secret key required for flask session and socketio session management
+app.secret_key = os.environ.get('SECRET_KEY') or os.urandom(24)
+# manage_session=True lets Flask-SocketIO use Flask's session inside events
+socketio = SocketIO(app, manage_session=True)
 
 def verify_user(token, admin_required=False):
     user = database.get_user(conn, token=token)
+    if user is None:
+        return False
     if admin_required:
-        return user is not None and user[5]
-    else:
-        return user is not None
+        # user row: id, name, email, password, role, token, created_at
+        return user[4] == 'admin'
+    return True
 
 def get_request_data(request):
     if request.method == 'POST':
@@ -71,7 +76,8 @@ def api_reset_password():
         return {'error': 'Incorrect old password'}, 401
     new_hashed_password = hashlib.sha256(data['new_password'].encode()).hexdigest()
     cursor = conn.cursor()
-    cursor.execute('UPDATE users SET password = ? WHERE email = ?', (new_hashed_password, data['email']))
+    # update by user id obtained from the token
+    cursor.execute('UPDATE users SET password = ? WHERE id = ?', (new_hashed_password, user[0]))
     conn.commit()
     return {'message': 'Password reset successful'}, 200
 
@@ -150,7 +156,8 @@ def api_send_message():
     recipient = database.get_user(conn, user_id=data['recipient_id'])
     if recipient is None:
         return {'error': 'Recipient not found'}, 404
-    message_id = database.send_message(conn, user[0], recipient[0], data['content'])
+    # use create_message from database module
+    message_id = database.create_message(conn, user[0], recipient[0], data['content'], group=False)
     return {'message': 'Message sent', 'message_id': message_id}, 200
 
 @app.route('/api/messages', methods=['POST'])
@@ -178,14 +185,16 @@ def home():
 def handle_authenticate(data):
     token = data.get('token')
     if not token:
-        return {'error': 'Invalid token'}, 401
+        emit('unauthorized', {'error': 'Invalid token'})
+        return
     user = database.get_user(conn, token=token)
     if user is None:
-        return {'error': 'Invalid token'}, 401
+        emit('unauthorized', {'error': 'Invalid token'})
+        return
     # If token is valid, store user information in session
     session['user_id'] = user[0]
     session['username'] = user[1]
-    return {'message': 'Authenticated successfully'}, 200
+    emit('authenticated', {'message': 'Authenticated successfully'})
 
 @socketio.on('send_message')
 def handle_send_message(data):
