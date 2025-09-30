@@ -135,6 +135,10 @@ def chat():
 def home():
     return render_template('home.html')
 
+@app.route('/test')
+def test():
+    return render_template('test.html')
+
 def run():
     if config("ssl"):
         if os.path.exists(config("ssl_cert")) or not os.path.exists(config("ssl_key")):
