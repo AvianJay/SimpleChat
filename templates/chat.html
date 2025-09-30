@@ -70,80 +70,113 @@
         }
     </style>
     <script>
-        // 改進版聊天應用
-        class ChatApp {
-            constructor() {
-                this.socket = null;
-                this.token = null;
-                this.maxMessageLength = 1000;
-                this.reconnectAttempts = 0;
-                this.maxReconnectAttempts = 5;
-            }
-
-            async init() {
-                try {
-                    await this.checkAuthentication();
-                    this.initSocket();
-                    this.setupEventListeners();
-                } catch (error) {
-                    this.handleError('初始化失敗', error);
-                }
-            }
-
-            async checkAuthentication() {
-                this.token = localStorage.getItem('token');
-                if (!this.token) {
-                    this.redirectToLogin();
-                    return;
-                }
-
-                try {
-                    this.showLoading(true);
-                    const response = await fetch('/api/user/me', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({ token: this.token })
+        document.addEventListener('DOMContentLoaded', function () {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                window.location.href = '/login';
+            } else {
+                fetch('/api/user/me', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ token: token })
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (!data.user) {
+                            window.location.href = '/login';
+                        } else {
+                            document.getElementById('welcome-message').innerText = `歡迎, ${data.user.username}`;
+                            initSocket(token);
+                            loadChats(token);
+                        }
                     });
-
-                    if (!response.ok) {
-                        throw new Error(`HTTP error! status: ${response.status}`);
-                    }
-
-                    const data = await response.json();
-                    if (!data.user) {
-                        this.redirectToLogin();
-                        return;
-                    }
-
-                    // 安全地設置用戶名（防止 XSS）
-                    const welcomeElement = document.getElementById('welcome-message');
-                    welcomeElement.textContent = `歡迎, ${this.escapeHtml(data.user.username)}`;
-                    
-                } catch (error) {
-                    console.error('Authentication check failed:', error);
-                    this.handleError('身份驗證失敗，請重新登入');
-                    setTimeout(() => this.redirectToLogin(), 2000);
-                } finally {
-                    this.showLoading(false);
-                }
             }
+        });
 
-            initSocket() {
-                this.socket = io({
-                    timeout: 20000,
-                    reconnection: true,
-                    reconnectionDelay: 1000,
-                    reconnectionAttempts: this.maxReconnectAttempts
+        function loadChats(token) {
+            fetch('/api/chats', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ token: token })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    const chatList = document.getElementById('chat-list');
+                    chatList.innerHTML = '';
+                    data.chats.forEach(chat => {
+                        const li = document.createElement('li');
+                        li.innerText = chat.name;
+                        li.addEventListener('click', function () {
+                            window.location.href = `/chat#${chat.id}`;
+                        });
+                        chatList.appendChild(li);
+                    });
                 });
+        }
 
-                this.socket.on('connect', () => {
-                    console.log('Connected to server');
-                    this.socket.emit('authenticate', { token: this.token });
-                    this.reconnectAttempts = 0;
-                    this.hideError();
+        function loadMessages(token, chatId, chatName) {
+            document.getElementById('chat-name').innerText = chatName;
+            fetch('/api/messages', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ token: token, chat_id: chatId })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    const messagesDiv = document.getElementById('messages');
+                    messagesDiv.innerHTML = '';
+                    data.messages.forEach(msg => {
+                        const messageElem = document.createElement('div');
+                        messageElem.innerText = `${msg.author}: ${msg.content}`;
+                        messagesDiv.appendChild(messageElem);
+                    });
+                    document.getElementById('message-input').disabled = false;
+                    document.getElementById('send-button').disabled = false;
+                    document.getElementById('message-input').focus();
                 });
+        }
+
+        // navigate event for hash change
+        window.addEventListener('hashchange', function () {
+            const token = localStorage.getItem('token');
+            const chatId = window.location.hash.substring(1);
+            if (chatId) {
+                fetch('/api/chats', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ token: token })
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        const chat = data.chats.find(c => c.id == chatId);
+                        if (chat) {
+                            loadMessages(token, chatId, chat.name);
+                        } else {
+                            alert('Chat not found');
+                        }
+                    });
+            } else {
+                document.getElementById('chat-name').innerText = '...';
+                document.getElementById('messages').innerHTML = '';
+                document.getElementById('message-input').disabled = true;
+                document.getElementById('send-button').disabled = true;
+            }
+        });
+
+        function initSocket(token) {
+            const socket = io();
+
+            socket.on('connect', function () {
+                socket.emit('authenticate', { token: token });
+            });
 
                 this.socket.on('authenticated', () => {
                     console.log('Authenticated successfully');
@@ -322,13 +355,19 @@
 
 <body>
     <div class="chat-container">
-        <h2 id="welcome-message">歡迎</h2>
         <div id="error-message" class="error-message"></div>
         <div id="loading" class="loading">載入中...</div>
-        <div id="messages" class="messages"></div>
-        <div class="input-container">
-            <input type="text" id="message-input" placeholder="輸入訊息..." maxlength="1000">
-            <button id="send-button">發送</button>
+        <div class="chats">
+            <h3>聊天列表</h3>
+            <ul id="chat-list">
+                <!-- 聊天列表將由JavaScript動態生成 -->
+            </ul>
+        </div>
+        <div class="chat-window">
+            <h3 id="chat-name">...</h3>
+            <div id="messages" class="messages"></div>
+            <input type="text" id="message-input" placeholder="輸入訊息..." disabled>
+            <button id="send-button" disabled>發送</button>
         </div>
     </div>
 </body>

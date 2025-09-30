@@ -1,5 +1,6 @@
 from flask import Flask, request, render_template
 from flask_socketio import SocketIO, emit
+from flask import session
 import database
 import hashlib
 import os
@@ -127,6 +128,43 @@ def api_get_user(user_id):
     }
     return {'user': user_data}, 200
 
+@app.route('/api/chats', methods=['POST'])
+def api_get_chats():
+    data = get_request_data(request)
+    if not data or 'token' not in data:
+        return {'error': 'Invalid input'}, 400
+    user = database.get_user(conn, token=data['token'])
+    if user is None:
+        return {'error': 'Invalid token'}, 401
+    chats = database.get_chats(conn, user[0])
+    return {'chats': chats}, 200
+
+@app.route('/api/message/send', methods=['POST'])
+def api_send_message():
+    data = get_request_data(request)
+    if not data or 'token' not in data or 'recipient_id' not in data or 'content' not in data:
+        return {'error': 'Invalid input'}, 400
+    user = database.get_user(conn, token=data['token'])
+    if user is None:
+        return {'error': 'Invalid token'}, 401
+    recipient = database.get_user(conn, user_id=data['recipient_id'])
+    if recipient is None:
+        return {'error': 'Recipient not found'}, 404
+    message_id = database.send_message(conn, user[0], recipient[0], data['content'])
+    return {'message': 'Message sent', 'message_id': message_id}, 200
+
+@app.route('/api/messages', methods=['POST'])
+def api_get_messages():
+    data = get_request_data(request)
+    if not data or 'token' not in data or 'chat_id' not in data:
+        return {'error': 'Invalid input'}, 400
+    user = database.get_user(conn, token=data['token'])
+    if user is None:
+        return {'error': 'Invalid token'}, 401
+    limit = int(data.get('limit', 50))
+    messages = database.get_messages(conn, chat_id=data['chat_id'], limit=limit)
+    return {'messages': messages}, 200
+
 @app.route('/chat')
 def chat():
     return render_template('chat.html')
@@ -134,6 +172,48 @@ def chat():
 @app.route('/')
 def home():
     return render_template('home.html')
+
+# SocketIO events
+@socketio.on('authenticate')
+def handle_authenticate(data):
+    token = data.get('token')
+    if not token:
+        return {'error': 'Invalid token'}, 401
+    user = database.get_user(conn, token=token)
+    if user is None:
+        return {'error': 'Invalid token'}, 401
+    # If token is valid, store user information in session
+    session['user_id'] = user[0]
+    session['username'] = user[1]
+    return {'message': 'Authenticated successfully'}, 200
+
+@socketio.on('send_message')
+def handle_send_message(data):
+    user_id = session.get('user_id')
+    if not user_id:
+        emit('error', {'error': 'Not authenticated'})
+        return
+    recipient_id = data.get('recipient_id')
+    content = data.get('content')
+    if not recipient_id or not content:
+        emit('error', {'error': 'Invalid input'})
+        return
+    recipient = database.get_user(conn, user_id=recipient_id)
+    if recipient is None:
+        emit('error', {'error': 'Recipient not found'})
+        return
+    message_id = database.create_message(conn, user_id, recipient_id, content, group=False)
+    message_data = {
+        'id': message_id,
+        'author': user_id,
+        'chat_id': recipient_id,
+        'is_group': False,
+        'content': content,
+        'edited': False,
+        'created_at': database.get_message(conn, message_id)[6]
+    }
+    emit('new_message', message_data, room=str(recipient_id))
+    emit('new_message', message_data)  # also emit to sender
 
 @app.route('/test')
 def test():

@@ -106,17 +106,20 @@ def create_group(conn, name, description=None):
     ''', (name, description))
     return cursor.lastrowid
 
-def get_group(conn, group_id):
+def get_group(conn, group_id=None, user_id=None):
     """Retrieve a group from the groups table."""
     cursor = conn.cursor()
-    cursor.execute('SELECT * FROM groups WHERE id = ?', (group_id,))
+    if group_id:
+        cursor.execute('SELECT * FROM groups WHERE id = ?', (group_id,))
+    elif user_id:
+        cursor.execute('SELECT * FROM groups g JOIN group_members gm ON g.id = gm.group_id WHERE gm.user_id = ?', (user_id,))
     return cursor.fetchone()
 
 def create_message(conn, author, chat_id, content, group=False):
-    """Create a new message in the messages table."""
+    """Create a new message in the messages table and return its id."""
     cursor = conn.cursor()
     cursor.execute('''
-        INSERT INTO messages (author, chat_id, content, is_group)  -- ⚠️ group -> is_group
+        INSERT INTO messages (author, chat_id, content, is_group)
         VALUES (?, ?, ?, ?)
     ''', (author, chat_id, content, int(group)))
     conn.commit()
@@ -166,3 +169,26 @@ def get_friends(conn, user_id):
         WHERE f.user_id = ? AND f.status = 'accepted'
     ''', (user_id,))
     return cursor.fetchall()
+
+def get_chats(conn, user_id):
+    """Retrieve a list of chats (both user and group) for a user."""
+    cursor = conn.cursor()
+    # User chats
+    cursor.execute('''
+        SELECT u.id, u.name, u.email, 'user' AS chat_type
+        FROM users u
+        JOIN friendships f ON u.id = f.friend_id
+        WHERE f.user_id = ? AND f.status = 'accepted'
+    ''', (user_id,))
+    user_chats = cursor.fetchall()
+    
+    # Group chats
+    cursor.execute('''
+        SELECT g.id, g.name, g.description, 'group' AS chat_type
+        FROM groups g
+        JOIN group_members gm ON g.id = gm.group_id
+        WHERE gm.user_id = ?
+    ''', (user_id,))
+    group_chats = cursor.fetchall()
+    
+    return user_chats + group_chats
