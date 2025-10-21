@@ -33,13 +33,17 @@
 <body>
     <div class="login-container">
         <h2>登入</h2>
-        <div class="form-group">
-            <input type="text" id="username" name="username" placeholder="輸入帳號" required>
-        </div>
-        <div class="form-group">
-            <input type="password" id="password" name="password" placeholder="輸入密碼" required>
-        </div>
-        <button id="login-button" onclick="login()">登入</button>
+        <form id="login_form" onsubmit="event.preventDefault(); login();">
+            <div class=login_container>
+                <div class="form-group">
+                    <input type="text" id="username" name="username" placeholder="輸入帳號" required>
+                </div>
+                <div class="form-group">
+                    <input type="password" id="password" name="password" placeholder="輸入密碼" required>
+                </div>
+                <button id="login-button" onclick="login()">登入</button>
+            </div>
+        </form>
     </div>
     <br></br>
     <div class="register-redirect">
