@@ -44,7 +44,7 @@ def init_database(db_name='app.db'):
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             author INTEGER NOT NULL,
             chat_id INTEGER NOT NULL,  -- can be user id or group id
-            is_group BOOLEAN DEFAULT 0,  -- ⚠️ group -> is_group
+            is_group BOOLEAN DEFAULT 0,
             content TEXT NOT NULL UNIQUE,
             edited BOOLEAN DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -130,7 +130,7 @@ def get_messages(conn, chat_id, group=False, limit=50):
     cursor = conn.cursor()
     cursor.execute('''
         SELECT * FROM messages
-        WHERE chat_id = ? AND is_group = ?  -- ⚠️ group → is_group
+        WHERE chat_id = ? AND is_group = ?
         ORDER BY created_at DESC
         LIMIT ?
     ''', (chat_id, int(group), limit))
