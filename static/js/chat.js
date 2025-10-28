@@ -148,6 +148,7 @@ class ChatApp {
     async sendMessage() {
         const chatId = window.location.hash.substring(1);
         const message = this.messageInput.value.trim();
+        if (!chatId) return this.handleError('請選擇聊天對象');
         if (!message) return this.handleError('請輸入訊息內容');
         if (message.length > this.maxMessageLength) return this.handleError(`訊息長度不能超過 ${this.maxMessageLength} 個字元`);
 
