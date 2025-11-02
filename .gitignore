@@ -210,3 +210,4 @@ app.db
 *.out
 config.json
 test.html
+inspect_db.py
