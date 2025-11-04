@@ -18,8 +18,10 @@ function login() {
         });
 }
 function logout() {
-    localStorage.removeItem('token');
-    window.location.href = '/login';
+    if(confirm("Are you sure you want to logout?")) {
+        localStorage.removeItem('token');
+        window.location.href = '/login';
+    }
 }
 function register() {
     const username = document.getElementById('username').value;
