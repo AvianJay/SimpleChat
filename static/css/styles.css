@@ -28,7 +28,9 @@ body {
     box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
     overflow: hidden;
     display: grid;
-    grid-template-columns: minmax(220px, 300px) 1fr;
+        /* Two rows: status bar + main content; Left: chats ~30% */
+    grid-template-columns: minmax(220px, 30%) 1fr;
+        grid-template-rows: auto 1fr;
     gap: 0;
     min-height: 540px;
 }
@@ -38,6 +40,7 @@ body {
     border-right: 1px solid rgba(15, 23, 42, 0.06);
     padding: 18px;
     background: linear-gradient(180deg, #ffffff, #fbfdff);
+        grid-row: 2;
 }
 
 .chats h3 {
@@ -84,6 +87,7 @@ body {
     display: flex;
     flex-direction: column;
     gap: 12px;
+        grid-row: 2;
 }
 
 .chat-window #chat-name {
@@ -188,6 +192,7 @@ body {
 .loading {
     color: var(--muted);
     font-size: 13px;
+        display: none; /* default hidden to avoid extra space */
 }
 
 .chat-container>#welcome-message,
@@ -196,6 +201,11 @@ body {
     grid-column: 1 / -1;
     padding: 0 18px;
 }
+/* Compact status bar at top */
+.status-bar{ grid-column:1 / -1; display:flex; align-items:center; gap:12px; padding:12px 18px; }
+#welcome-message{ margin:0; }
+.error-message{ margin:0; }
+.loading{ margin:0; }
 
 /* small utilities */
 .chat-window .meta-row {
