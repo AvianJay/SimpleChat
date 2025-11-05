@@ -129,7 +129,7 @@ def api_get_user(user_id):
         'id': user[0],
         'username': user[1],
         'email': user[2],
-        'is_admin': bool(user[5]),
+        'role': user[4],
         'created_at': user[6]
     }
     return {'user': user_data}, 200
