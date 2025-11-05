@@ -1,15 +1,14 @@
 import os
 import json
-
 version = "0.0.1"
 config_version = 1
 config_path = 'config.json'
-hash = "unknown"
-if hash == "unknown":
+git_hash = "unknown"
+if git_hash == "unknown":
     try:
-        hash = os.popen("git rev-parse --short HEAD").read().strip()
+        git_hash = os.popen("git rev-parse --short HEAD").read().strip()
     except Exception as e:
-        print("Failed to get git hash:", str(e))
+        print("Failed to get git_hash:", str(e))
 
 default_config = {
     "version": version,
