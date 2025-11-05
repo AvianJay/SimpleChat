@@ -1,5 +1,5 @@
 from flask import Flask, request, render_template
-from flask_socketio import SocketIO, emit
+from flask_socketio import SocketIO, emit, join_room
 from flask import session
 import database
 import hashlib
@@ -194,6 +194,10 @@ def handle_authenticate(data):
     # If token is valid, store user information in session
     session['user_id'] = user[0]
     session['username'] = user[1]
+    try:
+        join_room(str(user[0]))  # Join a room named after the user ID
+    except Exception as e:
+        print("Failed to join room:", str(e))
     emit('authenticated', {'message': 'Authenticated successfully'})
 
 @socketio.on('send_message')
@@ -207,6 +211,13 @@ def handle_send_message(data):
     if not recipient_id or not content:
         emit('error', {'error': 'Invalid input'})
         return
+    # Verify recipient exists
+    try:
+        recipient_id = int(recipient_id)
+    except (ValueError, TypeError):
+        emit('error', {'error': 'Invalid recipient ID'})
+        return
+
     recipient = database.get_user(conn, user_id=recipient_id)
     if recipient is None:
         emit('error', {'error': 'Recipient not found'})
@@ -219,26 +230,32 @@ def handle_send_message(data):
         'is_group': False,
         'content': content,
         'edited': False,
-        'created_at': database.get_message(conn, message_id)[6]
+        'created_at': database.get_messages(conn, message_id)[6]
     }
-    emit('new_message', message_data, room=str(recipient_id))
-    emit('new_message', message_data)  # also emit to sender
+    emit('new_message', message_data, to=str(recipient_id))
+    emit('new_message', message_data, to=str(user_id))  # also emit to sender
 
 @app.route('/test')
 def test():
     return render_template('test.html')
 
 def run():
+    host = config("host")
+    port = config("port")
+    print(f"Starting server on {host}:{port}...")
+    debug = config("debug")
     if config("ssl"):
-        if os.path.exists(config("ssl_cert")) or not os.path.exists(config("ssl_key")):
-            context = (config("ssl_cert"), config("ssl_key"))
-            app.run(host=config("host"), port=config("port"), ssl_context=context, debug=config("debug"))
+        cert = config("ssl_cert")
+        key = config("ssl_key")
+        if os.path.exists(cert) and os.path.exists(key):
+            context = (cert, key)
+            socketio.run(app, host=host, port=port, ssl_context=context, debug=debug)
         else:
             print("SSL is enabled but cert or key file does not exist.")
             print("Running without SSL...")
-            app.run(host=config("host"), port=config("port"), debug=config("debug"))
+            socketio.run(app, host=host, port=port, debug=debug)
     else:
-        app.run(host=config("host"), port=config("port"), debug=config("debug"))
+        socketio.run(app, host=host, port=port, debug=debug)
 
 # idk
 if __name__ == "__main__":
