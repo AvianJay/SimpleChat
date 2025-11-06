@@ -89,6 +89,17 @@ def api_friend_request():
     user = database.get_user(conn, token=data['token'])
     if user is None:
         return {'error': 'Invalid token'}, 401
+    # check if friend_id exists
+    try:
+        friend_id = int(data['friend_id'])
+    except (ValueError, TypeError):
+        return {'error': 'Invalid friend_id'}, 400
+    if friend_id == user[0]:
+        return {'error': 'Cannot friend yourself'}, 400
+    friend_user = database.get_user(conn, user_id=friend_id)
+    if friend_user is None:
+        return {'error': 'Friend not found'}, 404
+    # check existing friendship status
     friend_status = database.friend_status(conn, user[0], data['friend_id'])
     if friend_status == 'accepted':
         return {'error': 'Already friends'}, 400

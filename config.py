@@ -28,17 +28,14 @@ try:
         _config = json.load(open(config_path, "r"))
         # Todo: verify
         if not isinstance(_config, dict):
-            print("Config file is not a valid JSON object, \
-                resetting to default config.")
+            print("Config file is not a valid JSON object, resetting to default config.")
             _config = default_config.copy()
         for key in _config.keys():
             if not isinstance(_config[key], type(default_config[key])):
-                print(f"Config key '{key}' has an invalid type, \
-                      resetting to default value.")
+                print(f"Config key '{key}' has an invalid type, resetting to default value.")
                 _config[key] = default_config[key]
         if "config_version" not in _config:
-            print("Config file does not have 'config_version', \
-                resetting to default config.")
+            print("Config file does not have 'config_version', resetting to default config.")
             _config = default_config.copy()
     else:
         _config = default_config.copy()
@@ -48,11 +45,7 @@ except ValueError:
     json.dump(_config, open(config_path, "w"), indent=4)
 
 if _config.get("config_version", 0) < config_version:
-    print("Updating config file from version",
-          _config.get("config_version", 0),
-          "to version",
-          config_version
-          )
+    print("Updating config file from version", _config.get("config_version", 0), "to version", config_version)
     for k in default_config.keys():
         if _config.get(k) is None:
             _config[k] = default_config[k]
