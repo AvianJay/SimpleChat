@@ -246,6 +246,46 @@ def handle_send_message(data):
     emit('new_message', message_data, to=str(recipient_id))
     emit('new_message', message_data, to=str(user_id))  # also emit to sender
 
+@socketio.on('send_friend_request')
+def handle_send_friend_request(data):
+    user_id = session.get('user_id')
+    if not user_id:
+        emit('error', {'error': 'Not authenticated'})
+        return
+    friend_id = data.get('friend_id')
+    if not friend_id:
+        emit('error', {'error': 'Invalid input'})
+        return
+    # Verify friend exists
+    try:
+        friend_id = int(friend_id)
+    except (ValueError, TypeError):
+        emit('error', {'error': 'Invalid friend ID'})
+        return
+
+    if friend_id == user_id:
+        emit('error', {'error': 'Cannot friend yourself'})
+        return
+
+    friend_user = database.get_user(conn, user_id=friend_id)
+    if friend_user is None:
+        emit('error', {'error': 'Friend not found'})
+        return
+    # check existing friendship status
+    friend_status = database.friend_status(conn, user_id, friend_id)
+    if friend_status == 'accepted':
+        emit('error', {'error': 'Already friends'})
+        return
+    elif friend_status == 'pending':
+        emit('error', {'error': 'Friend request already sent'})
+        return
+    elif friend_status == 'blocked':
+        emit('error', {'error': 'You are blocked by this user'})
+        return
+    else:
+        database.friend(conn, user_id, friend_id, status='pending')
+        emit('friend_request_sent', {'message': 'Friend request sent'})
+
 @app.route('/test')
 def test():
     return render_template('test.html')
