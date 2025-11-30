@@ -108,8 +108,14 @@ def api_friend_request():
     elif friend_status == 'blocked':
         return {'error': 'You are blocked by this user'}, 400
     else:
-        database.friend(conn, user[0], data['friend_id'], status='pending')
-        return {'message': 'Friend request sent'}, 200
+        # check if target user is already sent a friend request
+        if database.friend_status(conn, data['friend_id'], user[0]) == 'pending':
+            # update the status to accepted
+            database.friend(conn, user[0], data['friend_id'], status='accepted')
+            return {'message': 'Friend request accepted'}, 200
+        else:
+            database.friend(conn, user[0], data['friend_id'], status='pending')
+            return {'message': 'Friend request sent'}, 200
 
 @app.route('/api/friends', methods=['POST'])
 def api_get_friends():
