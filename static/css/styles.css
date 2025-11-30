@@ -211,9 +211,10 @@ body {
 
 .status-bar {
     grid-column: 1 / -1;
+    /*width: fit-content;*/
     display: flex;
     align-items: center;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 12px;
     padding: 12px 18px;
     background: rgba(248, 250, 252, 0.9);
@@ -222,6 +223,7 @@ body {
 
 #welcome-message {
     margin: 0;
+    white-space: nowrap;
 }
 
 .error-message {
@@ -278,6 +280,7 @@ body {
 }
 
 /* Responsive: stack on small screens */
+/*
 @media (max-width:860px) {
     .chat-container {
         grid-template-columns: 1fr;
@@ -302,4 +305,4 @@ body {
         margin-left: 0;
         width: 100%;
     }
-}
+}*/
