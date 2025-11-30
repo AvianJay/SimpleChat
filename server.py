@@ -112,6 +112,7 @@ def api_friend_request():
         if database.friend_status(conn, data['friend_id'], user[0]) == 'pending':
             # update the status to accepted
             database.friend(conn, user[0], data['friend_id'], status='accepted')
+            database.friend(conn, data['friend_id'], user[0], status='accepted')
             return {'message': 'Friend request accepted'}, 200
         else:
             database.friend(conn, user[0], data['friend_id'], status='pending')
@@ -162,6 +163,101 @@ def api_get_chats():
     chats = database.get_chats(conn, user[0])
     return {'chats': chats}, 200
 
+@app.route('/api/groups', methods=['POST'])
+def api_create_group():
+    data = get_request_data(request)
+    if not data or 'token' not in data or 'name' not in data:
+        return {'error': 'Invalid input'}, 400
+    user = database.get_user(conn, token=data['token'])
+    if user is None:
+        return {'error': 'Invalid token'}, 401
+    group_id = database.create_group(conn, data['name'], data.get('description'))
+    database.add_group_member(conn, group_id, user[0], role='owner')
+    return {'message': 'Group created', 'group_id': group_id}, 201
+
+@app.route('/api/groups/<group_id>/members', methods=['POST'])
+def api_add_group_member(group_id):
+    data = get_request_data(request)
+    if not data or 'token' not in data or 'user_id' not in data:
+        return {'error': 'Invalid input'}, 400
+    user = database.get_user(conn, token=data['token'])
+    if user is None:
+        return {'error': 'Invalid token'}, 401
+    members = database.get_group_members(conn, group_id)
+    is_member = any(m[0] == user[0] for m in members)
+    if not is_member:
+         return {'error': 'Not authorized'}, 403
+    try:
+        new_member_id = int(data['user_id'])
+    except ValueError:
+        return {'error': 'Invalid user_id'}, 400
+    database.add_group_member(conn, group_id, new_member_id)
+    return {'message': 'Member added'}, 200
+
+@app.route('/api/groups/<group_id>/members/<user_id>', methods=['DELETE'])
+def api_remove_group_member(group_id, user_id):
+    token = request.args.get('token')
+    if not token:
+        return {'error': 'Invalid input'}, 400
+    user = database.get_user(conn, token=token)
+    if user is None:
+        return {'error': 'Invalid token'}, 401
+    try:
+        target_user_id = int(user_id)
+    except ValueError:
+        return {'error': 'Invalid user_id'}, 400
+    database.remove_group_member(conn, group_id, target_user_id)
+    return {'message': 'Member removed'}, 200
+
+@app.route('/api/groups/<group_id>/leave', methods=['POST'])
+def api_leave_group(group_id):
+    data = get_request_data(request)
+    if not data or 'token' not in data:
+        return {'error': 'Invalid input'}, 400
+    user = database.get_user(conn, token=data['token'])
+    if user is None:
+        return {'error': 'Invalid token'}, 401
+    
+    database.remove_group_member(conn, group_id, user[0])
+    return {'message': 'Left group'}, 200
+
+@app.route('/api/groups/<group_id>', methods=['DELETE'])
+def api_delete_group(group_id):
+    token = request.args.get('token')
+    if not token:
+        return {'error': 'Invalid input'}, 400
+    user = database.get_user(conn, token=token)
+    if user is None:
+        return {'error': 'Invalid token'}, 401
+    
+    # Check if user is owner
+    members = database.get_group_members(conn, group_id)
+    # member tuple: id, name, email, role
+    is_owner = any(m[0] == user[0] and m[3] == 'owner' for m in members)
+    
+    if not is_owner:
+        return {'error': 'Not authorized'}, 403
+        
+    database.delete_group(conn, group_id)
+    return {'message': 'Group deleted'}, 200
+
+@app.route('/api/friends/<friend_id>', methods=['DELETE'])
+def api_delete_friend(friend_id):
+    token = request.args.get('token')
+    if not token:
+        return {'error': 'Invalid input'}, 400
+    user = database.get_user(conn, token=token)
+    if user is None:
+        return {'error': 'Invalid token'}, 401
+    
+    try:
+        friend_id = int(friend_id)
+    except ValueError:
+        return {'error': 'Invalid friend_id'}, 400
+        
+    database.delete_friend(conn, user[0], friend_id)
+    return {'message': 'Friend removed'}, 200
+
 @app.route('/api/message/send', methods=['POST'])
 def api_send_message():
     data = get_request_data(request)
@@ -170,11 +266,25 @@ def api_send_message():
     user = database.get_user(conn, token=data['token'])
     if user is None:
         return {'error': 'Invalid token'}, 401
-    recipient = database.get_user(conn, user_id=data['recipient_id'])
-    if recipient is None:
-        return {'error': 'Recipient not found'}, 404
+    
+    is_group = data.get('is_group', False)
+    recipient_id = data['recipient_id']
+
+    if is_group:
+        group = database.get_group(conn, group_id=recipient_id)
+        if group is None:
+            return {'error': 'Group not found'}, 404
+        # Check if user is member of the group
+        members = database.get_group_members(conn, recipient_id)
+        if not any(m[0] == user[0] for m in members):
+             return {'error': 'Not a member of this group'}, 403
+    else:
+        recipient = database.get_user(conn, user_id=recipient_id)
+        if recipient is None:
+            return {'error': 'Recipient not found'}, 404
+
     # use create_message from database module
-    message_id = database.create_message(conn, user[0], recipient[0], data['content'], group=False)
+    message_id = database.create_message(conn, user[0], recipient_id, data['content'], group=is_group)
     return {'message': 'Message sent', 'message_id': message_id}, 200
 
 @app.route('/api/messages', methods=['POST'])
@@ -185,9 +295,50 @@ def api_get_messages():
     user = database.get_user(conn, token=data['token'])
     if user is None:
         return {'error': 'Invalid token'}, 401
+    
+    is_group = data.get('is_group', False)
+    chat_id = data['chat_id']
+    
+    if is_group:
+        # Check if user is member of the group
+        members = database.get_group_members(conn, chat_id)
+        if not any(m[0] == user[0] for m in members):
+             return {'error': 'Not a member of this group'}, 403
+    
     limit = int(data.get('limit', 50))
-    messages = database.get_messages(conn, chat_id=data['chat_id'], limit=limit)
+    messages = database.get_messages(conn, chat_id=chat_id, group=is_group, limit=limit)
     return {'messages': messages}, 200
+
+@app.route('/api/messages/<message_id>', methods=['PUT', 'DELETE'])
+def api_message_operations(message_id):
+    if request.method == 'PUT':
+        data = get_request_data(request)
+        if not data or 'token' not in data or 'content' not in data:
+            return {'error': 'Invalid input'}, 400
+        user = database.get_user(conn, token=data['token'])
+        if user is None:
+            return {'error': 'Invalid token'}, 401
+        msg = database.get_message(conn, message_id)
+        if not msg:
+            return {'error': 'Message not found'}, 404
+        if msg[1] != user[0]:
+            return {'error': 'Not authorized'}, 403
+        database.update_message(conn, message_id, data['content'])
+        return {'message': 'Message updated'}, 200
+    elif request.method == 'DELETE':
+        token = request.args.get('token')
+        if not token:
+            return {'error': 'Invalid input'}, 400
+        user = database.get_user(conn, token=token)
+        if user is None:
+            return {'error': 'Invalid token'}, 401
+        msg = database.get_message(conn, message_id)
+        if not msg:
+            return {'error': 'Message not found'}, 404
+        if msg[1] != user[0]:
+            return {'error': 'Not authorized'}, 403
+        database.delete_message(conn, message_id)
+        return {'message': 'Message deleted'}, 200
 
 @app.route('/chat')
 def chat():

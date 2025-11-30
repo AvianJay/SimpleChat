@@ -192,3 +192,79 @@ def get_chats(conn, user_id):
     group_chats = cursor.fetchall()
     
     return user_chats + group_chats
+
+def add_group_member(conn, group_id, user_id, role='member'):
+    """Add a user to a group."""
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO group_members (group_id, user_id, role)
+        VALUES (?, ?, ?)
+    ''', (group_id, user_id, role))
+    conn.commit()
+
+def remove_group_member(conn, group_id, user_id):
+    """Remove a user from a group."""
+    cursor = conn.cursor()
+    cursor.execute('''
+        DELETE FROM group_members
+        WHERE group_id = ? AND user_id = ?
+    ''', (group_id, user_id))
+    conn.commit()
+
+def get_group_members(conn, group_id):
+    """Get all members of a group."""
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT u.id, u.name, u.email, gm.role
+        FROM users u
+        JOIN group_members gm ON u.id = gm.user_id
+        WHERE gm.group_id = ?
+    ''', (group_id,))
+    return cursor.fetchall()
+
+def delete_friend(conn, user_id, friend_id):
+    """Delete a friendship."""
+    cursor = conn.cursor()
+    cursor.execute('''
+        DELETE FROM friendships
+        WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)
+    ''', (user_id, friend_id, friend_id, user_id))
+    conn.commit()
+
+def update_message(conn, message_id, content):
+    """Update a message content."""
+    cursor = conn.cursor()
+    cursor.execute('''
+        UPDATE messages
+        SET content = ?, edited = 1
+        WHERE id = ?
+    ''', (content, message_id))
+    conn.commit()
+
+def delete_message(conn, message_id):
+    """Delete a message."""
+    cursor = conn.cursor()
+    cursor.execute('''
+        DELETE FROM messages
+        WHERE id = ?
+    ''', (message_id,))
+    conn.commit()
+
+def get_message(conn, message_id):
+    """Get a message by ID."""
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT * FROM messages WHERE id = ?
+    ''', (message_id,))
+    return cursor.fetchone()
+
+def delete_group(conn, group_id):
+    """Delete a group and all its members and messages."""
+    cursor = conn.cursor()
+    # Delete group
+    cursor.execute('DELETE FROM groups WHERE id = ?', (group_id,))
+    # Delete members
+    cursor.execute('DELETE FROM group_members WHERE group_id = ?', (group_id,))
+    # Delete messages
+    cursor.execute('DELETE FROM messages WHERE chat_id = ? AND is_group = 1', (group_id,))
+    conn.commit()
