@@ -1,54 +1,89 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-TW">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>SimpleChat - 首頁</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <style>
+        .home-container {
+            text-align: center;
+            padding: 40px;
+            background: white;
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-lg);
+            max-width: 500px;
+            width: 90%;
+        }
 
-    <!-- 
-    網頁內容描述  
-    <meta name="description" content="A simple HTML document">
-    <meta name="keywords" content="HTML, CSS, JavaScript">
-    <meta name="author" content="Your Name">
-    <link rel="stylesheet" href="styles.css">
-    <link rel="icon" href="favicon.ico" type="image/x-icon"> 
-    -->
+        .home-title {
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 16px;
+            color: var(--primary);
+        }
 
-    <!-- 網頁標題 -->
-    <title>online chatroom</title>
+        .home-subtitle {
+            font-size: 16px;
+            color: var(--text-secondary);
+            margin-bottom: 32px;
+            line-height: 1.5;
+        }
+
+        .home-actions {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border-radius: var(--radius-md);
+            text-decoration: none;
+            font-weight: 600;
+            transition: all 0.2s;
+            display: inline-block;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-hover);
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-md);
+        }
+
+        .btn-secondary {
+            background: white;
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover {
+            background: var(--bg-app);
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-sm);
+        }
+    </style>
 </head>
 
 <body>
-    <header>
-        <h1>Welcome to My Web Page</h1>
-    </header>
-    <nav>
-        <ul>
-            <li><a href="/login">login</a></li>
-            <li><a href="/register">register</a></li>
-        </ul>
-    </nav>
-
-    <!--
-    <main>
-        <section id="home">
-            <h2>Home Section</h2>
-            <p>This is the home section of the webpage.</p>
-        </section>
-        <section id="about">
-            <h2>About Section</h2>
-            <p>This section contains information about the webpage.</p>
-        </section>
-        <section id="contact">
-            <h2>Contact Section</h2>
-            <p>You can contact us through this section.</p>
-        </section>
-    </main>
-    <footer>
-        <p>&copy;All rights reserved.</p>
-    </footer>
-    -->
+    <div class="app-background"></div>
+    <div class="home-container">
+        <h1 class="home-title">歡迎來到 SimpleChat</h1>
+        <p class="home-subtitle">一個簡單、快速且現代化的即時聊天應用程式。<br>立即開始與朋友聯繫！</p>
+        <div class="home-actions">
+            <a href="/login" class="btn btn-primary">登入</a>
+            <a href="/register" class="btn btn-secondary">註冊</a>
+        </div>
+    </div>
 </body>
 
 </html>

@@ -130,6 +130,18 @@ def api_get_friends():
     friends_list = [{'id': f[0], 'name': f[1], 'email': f[2], 'status': f[3]} for f in friends]
     return {'friends': friends_list}, 200
 
+@app.route('/api/friend_requests', methods=['POST'])
+def api_get_friend_requests():
+    data = get_request_data(request)
+    if not data or 'token' not in data:
+        return {'error': 'Invalid input'}, 400
+    user = database.get_user(conn, token=data['token'])
+    if user is None:
+        return {'error': 'Invalid token'}, 401
+    requests = database.get_pending_requests(conn, user[0])
+    requests_list = [{'id': r[0], 'name': r[1], 'email': r[2]} for r in requests]
+    return {'requests': requests_list}, 200
+
 @app.route('/api/user/<user_id>', methods=['POST'])
 def api_get_user(user_id):
     data = get_request_data(request)

@@ -170,6 +170,17 @@ def get_friends(conn, user_id):
     ''', (user_id,))
     return cursor.fetchall()
 
+def get_pending_requests(conn, user_id):
+    """Retrieve a list of pending friend requests for a user."""
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT u.id, u.name, u.email
+        FROM users u
+        JOIN friendships f ON u.id = f.user_id
+        WHERE f.friend_id = ? AND f.status = 'pending'
+    ''', (user_id,))
+    return cursor.fetchall()
+
 def get_chats(conn, user_id):
     """Retrieve a list of chats (both user and group) for a user."""
     cursor = conn.cursor()

@@ -5,6 +5,7 @@ class ChatApp {
         this.maxMessageLength = 2000;
         this.reconnectAttempts = 0;
         this.maxReconnectAttempts = 5;
+        this.currentUser = null;
     }
 
     init() {
@@ -20,6 +21,7 @@ class ChatApp {
                     window.location.href = '/login';
                     return;
                 }
+                this.currentUser = user;
                 document.getElementById('welcome-message').innerText = `歡迎, ${user.username}`;
                 this.initSocket();
                 this.loadChats();
@@ -44,6 +46,110 @@ class ChatApp {
         });
 
         window.addEventListener('hashchange', () => this.onHashChange());
+
+        // Friend Management
+        this.addFriendBtn = document.getElementById('add-friend-btn');
+        this.friendRequestsBtn = document.getElementById('friend-requests-btn');
+        this.addFriendModal = document.getElementById('add-friend-modal');
+        this.friendRequestsModal = document.getElementById('friend-requests-modal');
+        this.closeModals = document.querySelectorAll('.close-modal');
+        this.confirmAddFriendBtn = document.getElementById('confirm-add-friend');
+        this.friendIdInput = document.getElementById('friend-id-input');
+        this.friendRequestsList = document.getElementById('friend-requests-list');
+
+        this.addFriendBtn.addEventListener('click', () => this.addFriendModal.style.display = 'block');
+        this.friendRequestsBtn.addEventListener('click', () => {
+            this.friendRequestsModal.style.display = 'block';
+            this.loadFriendRequests();
+        });
+
+        this.closeModals.forEach(btn => {
+            btn.addEventListener('click', () => {
+                this.addFriendModal.style.display = 'none';
+                this.friendRequestsModal.style.display = 'none';
+            });
+        });
+
+        window.addEventListener('click', (e) => {
+            if (e.target === this.addFriendModal) this.addFriendModal.style.display = 'none';
+            if (e.target === this.friendRequestsModal) this.friendRequestsModal.style.display = 'none';
+        });
+
+        this.confirmAddFriendBtn.addEventListener('click', () => this.sendFriendRequest());
+    }
+
+    async sendFriendRequest() {
+        const friendId = this.friendIdInput.value.trim();
+        if (!friendId) return alert('請輸入好友 ID');
+
+        try {
+            const res = await fetch('/api/friend_request', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token: this.token, friend_id: friendId })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                alert('好友邀請已發送');
+                this.addFriendModal.style.display = 'none';
+                this.friendIdInput.value = '';
+            } else {
+                alert(data.error || '發送失敗');
+            }
+        } catch (e) {
+            console.error(e);
+            alert('發送失敗');
+        }
+    }
+
+    async loadFriendRequests() {
+        try {
+            const res = await fetch('/api/friend_requests', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token: this.token })
+            });
+            const data = await res.json();
+            this.friendRequestsList.innerHTML = '';
+            if (data.requests.length === 0) {
+                this.friendRequestsList.innerHTML = '<li>尚無好友邀請</li>';
+                return;
+            }
+            data.requests.forEach(req => {
+                const li = document.createElement('li');
+                li.innerHTML = `
+                    <span>${req.name} (ID: ${req.id})</span>
+                    <div class="request-actions">
+                        <button class="btn-accept" onclick="chatApp.acceptFriendRequest(${req.id})">接受</button>
+                    </div>
+                `;
+                this.friendRequestsList.appendChild(li);
+            });
+        } catch (e) {
+            console.error(e);
+            this.friendRequestsList.innerHTML = '<li>載入失敗</li>';
+        }
+    }
+
+    async acceptFriendRequest(friendId) {
+        try {
+            const res = await fetch('/api/friend_request', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token: this.token, friend_id: friendId })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                alert('已接受好友邀請');
+                this.loadFriendRequests(); // Reload list
+                this.loadChats(); // Reload chats
+            } else {
+                alert(data.error || '操作失敗');
+            }
+        } catch (e) {
+            console.error(e);
+            alert('操作失敗');
+        }
     }
 
     async fetchCurrentUser() {
@@ -84,7 +190,7 @@ class ChatApp {
             console.error('connect_error', err);
             this.reconnectAttempts++;
             if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-                this.handleError('無法連接到伺服器，請檢查網路或稍後再試');
+                this.handleError('連線失敗，請檢查您的網路');
             }
         });
     }
@@ -102,6 +208,9 @@ class ChatApp {
             li.textContent = chat.name;
             li.addEventListener('click', () => {
                 window.location.hash = `#${chat.id}`;
+                // Update active state
+                document.querySelectorAll('#chat-list li').forEach(el => el.classList.remove('active'));
+                li.classList.add('active');
             });
             this.chatList.appendChild(li);
         });
@@ -112,8 +221,8 @@ class ChatApp {
     async onHashChange() {
         const chatId = window.location.hash.substring(1);
         if (!chatId) {
-            this.chatNameElem.innerText = '...';
-            this.messagesDiv.innerHTML = '';
+            this.chatNameElem.innerText = '選擇聊天';
+            this.messagesDiv.innerHTML = '<div class="empty-state"><p>選擇一個對話開始聊天</p></div>';
             this.enableChatInterface(false);
             return;
         }
@@ -126,10 +235,18 @@ class ChatApp {
         const data = await res.json();
         const chat = data.chats.find(c => String(c.id) === String(chatId));
         if (!chat) {
-            alert('Chat not found');
+            // alert('Chat not found');
             return;
         }
         this.chatNameElem.innerText = chat.name;
+
+        // Highlight active chat in list
+        const listItems = this.chatList.querySelectorAll('li');
+        listItems.forEach(li => {
+            if (li.textContent === chat.name) li.classList.add('active');
+            else li.classList.remove('active');
+        });
+
         await this.loadMessages(chatId);
         this.enableChatInterface(true);
     }
@@ -142,7 +259,11 @@ class ChatApp {
         });
         const data = await res.json();
         this.messagesDiv.innerHTML = '';
-        data.messages.forEach(msg => this.displayMessage(msg));
+        if (data.messages.length === 0) {
+            this.messagesDiv.innerHTML = '<div class="empty-state"><p>尚無訊息</p></div>';
+        } else {
+            data.messages.forEach(msg => this.displayMessage(msg));
+        }
     }
 
     async sendMessage() {
@@ -150,7 +271,7 @@ class ChatApp {
         const message = this.messageInput.value.trim();
         if (!chatId) return this.handleError('請選擇聊天對象');
         if (!message) return this.handleError('請輸入訊息內容');
-        if (message.length > this.maxMessageLength) return this.handleError(`訊息長度不能超過 ${this.maxMessageLength} 個字元`);
+        if (message.length > this.maxMessageLength) return this.handleError(`訊息長度過長 (上限 ${this.maxMessageLength} 字)`);
 
         try {
             const res = await fetch('/api/message/send', {
@@ -162,20 +283,42 @@ class ChatApp {
             this.messageInput.value = '';
             this.hideError();
         } catch (e) {
-            this.handleError('發送訊息失敗，請稍後再試', e);
+            this.handleError('發送失敗', e);
         }
     }
 
     displayMessage(msg) {
+        // Remove empty state if present
+        const emptyState = this.messagesDiv.querySelector('.empty-state');
+        if (emptyState) emptyState.remove();
+
         const el = document.createElement('div');
-        el.className = 'message';
+        const isMe = this.currentUser && String(msg.author) === String(this.currentUser.id);
+        el.className = `message ${isMe ? 'outgoing' : 'incoming'}`;
+
         const author = document.createElement('span');
         author.className = 'message-author';
-        author.textContent = `${msg.author}: `;
-        const content = document.createElement('span');
+        author.textContent = isMe ? '你' : `用戶 ${msg.author}`;
+
+        const content = document.createElement('div');
+        content.className = 'message-content';
         content.textContent = msg.content;
+
         el.appendChild(author);
         el.appendChild(content);
+
+        if (msg.created_at) {
+            const time = document.createElement('span');
+            time.className = 'message-time';
+            time.style.fontSize = '10px';
+            time.style.opacity = '0.7';
+            time.style.display = 'block';
+            time.style.textAlign = 'right';
+            time.style.marginTop = '4px';
+            time.textContent = new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            el.appendChild(time);
+        }
+
         this.messagesDiv.appendChild(el);
         this.messagesDiv.scrollTop = this.messagesDiv.scrollHeight;
     }
@@ -190,6 +333,9 @@ class ChatApp {
         console.error(message, err);
         this.errorElem.textContent = message;
         this.errorElem.style.display = 'block';
+        setTimeout(() => {
+            this.errorElem.style.display = 'none';
+        }, 5000);
     }
 
     hideError() {
@@ -202,8 +348,7 @@ class ChatApp {
     }
 }
 
-// init on DOM ready
 document.addEventListener('DOMContentLoaded', () => {
-    const chatApp = new ChatApp();
-    chatApp.init();
+    window.chatApp = new ChatApp();
+    window.chatApp.init();
 });
