@@ -277,35 +277,39 @@ def api_delete_friend(friend_id):
 @app.route('/api/message/send', methods=['POST'])
 def api_send_message():
     data = get_request_data(request)
-    if not data or 'token' not in data or 'recipient_id' not in data or 'content' not in data:
+    if not data or 'token' not in data or 'chat_id' not in data or 'content' not in data:
         return {'error': 'Invalid input'}, 400
     user = database.get_user(conn, token=data['token'])
     if user is None:
         return {'error': 'Invalid token'}, 401
     
     is_group = data.get('is_group', False)
-    recipient_id = data['recipient_id']
+    chat_id = data['chat_id']
+    emit_users = []
 
     if is_group:
-        group = database.get_group(conn, group_id=recipient_id)
+        group = database.get_group(conn, group_id=chat_id)
         if group is None:
             return {'error': 'Group not found'}, 404
         # Check if user is member of the group
-        members = database.get_group_members(conn, recipient_id)
-        if not any(m[0] == user[0] for m in members):
+        members = database.get_group_members(conn, chat_id)
+        emit_users = [m['id'] for m in members]
+        if not any(m['id'] == user[0] for m in members):
              return {'error': 'Not a member of this group'}, 403
     else:
-        recipient = database.get_user_dm(conn, user_id=user[0], dm_id=recipient_id)
-        if recipient is None:
+        dm_chat = database.get_user_dm(conn, user_id=user[0], dm_id=chat_id)
+        emit_users.append(dm_chat['target_id'])
+        emit_users.append(user[0])
+        if dm_chat is None:
             return {'error': 'Recipient not found'}, 404
-        if recipient['user_id'] != user[0]:
+        if dm_chat['user_id'] != user[0]:
             return {'error': 'Not authorized'}, 403
 
     # use create_message from database module
-    message_id = database.create_message(conn, user[0], recipient_id, data['content'], group=is_group)
+    message_id = database.create_message(conn, user[0], chat_id, data['content'], group=is_group)
     message = database.get_message(conn, message_id)
-    emit('message', message, namespace='/chat', to=recipient_id)
-    emit('message', message, namespace='/chat', to=user[0])
+    for user_id in emit_users:
+        emit('message', message, namespace='/chat', to=str(user_id))
     return {'message': 'Message sent', 'message_id': message_id}, 200
 
 @app.route('/api/messages', methods=['POST'])
@@ -370,7 +374,7 @@ def home():
     return render_template('home.html')
 
 # SocketIO events
-@socketio.on('authenticate')
+@socketio.on('authenticate', namespace='/chat')
 def handle_authenticate(data):
     token = data.get('token')
     if not token:
@@ -389,7 +393,7 @@ def handle_authenticate(data):
         print("Failed to join room:", str(e))
     emit('authenticated', {'message': 'Authenticated successfully'})
 
-@socketio.on('send_message')
+@socketio.on('send_message', namespace='/chat')
 def handle_send_message(data):
     user_id = session.get('user_id')
     if not user_id:
@@ -424,7 +428,7 @@ def handle_send_message(data):
     emit('new_message', message_data, to=str(recipient_id))
     emit('new_message', message_data, to=str(user_id))  # also emit to sender
 
-@socketio.on('send_friend_request')
+@socketio.on('send_friend_request', namespace='/chat')
 def handle_send_friend_request(data):
     user_id = session.get('user_id')
     if not user_id:

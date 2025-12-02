@@ -182,7 +182,7 @@ class ChatApp {
     }
 
     initSocket() {
-        this.socket = io();
+        this.socket = io("/chat");
         this.socket.on('connect', () => {
             this.socket.emit('authenticate', { token: this.token });
         });
@@ -284,6 +284,8 @@ class ChatApp {
         if (data.messages.length === 0) {
             this.messagesDiv.innerHTML = '<div class="empty-state"><p>尚無訊息</p></div>';
         } else {
+            // sort messages by timestamp
+            data.messages.sort((a, b) => a.timestamp - b.timestamp);
             for (const msg of data.messages) {
                 await this.displayMessage(msg);
             }
@@ -302,7 +304,7 @@ class ChatApp {
             const res = await fetch('/api/message/send', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ token: this.token, recipient_id: chatId, content: message, is_group: chatType === 'group' })
+                body: JSON.stringify({ token: this.token, chat_id: chatId, content: message, is_group: chatType === 'group' })
             });
             if (!res.ok) throw new Error('send failed');
             this.messageInput.value = '';

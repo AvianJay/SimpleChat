@@ -2,6 +2,7 @@ import sqlite3
 import string
 import random
 import hashlib
+from datetime import datetime
 
 def init_database(db_name='app.db'):
     """Initialize the SQLite database with a sample table."""
@@ -153,7 +154,8 @@ def get_messages(conn, chat_id, group=False, limit=50):
         'is_group': message[3],
         'content': message[4],
         'edited': message[5],
-        'created_at': message[6]
+        'created_at': message[6],
+        'timestamp': datetime.fromisoformat(message[6]).timestamp()
     } for message in messages]
     return messages
 
@@ -339,7 +341,8 @@ def get_message(conn, message_id):
         'is_group': message[3],
         'content': message[4],
         'edited': message[5],
-        'created_at': message[6]
+        'created_at': message[6],
+        'timestamp': datetime.fromisoformat(message[6]).timestamp()
     }
     return message
 
