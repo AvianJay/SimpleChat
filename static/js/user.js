@@ -13,12 +13,12 @@ function login() {
                 localStorage.setItem('token', data.token);
                 window.location.href = '/chat';
             } else {
-                alert('Login failed: ' + data.error);
+                alert('登入失敗: ' + data.error);
             }
         });
 }
 function logout() {
-    if(confirm("Are you sure you want to logout?")) {
+    if (confirm("確定要登出嗎？")) {
         localStorage.removeItem('token');
         window.location.href = '/login';
     }
@@ -28,7 +28,7 @@ function register() {
     const password = document.getElementById('password').value;
     const reconfirm_password = document.getElementById('reconfirmpassword').value;
     if (password !== reconfirm_password) {
-        alert('Passwords do not match!');
+        alert('密碼不一致!');
         return;
     }
     email = document.getElementById('email').value;
@@ -41,10 +41,10 @@ function register() {
     }).then(response => response.json())
         .then(data => {
             if (data.message) {
-                alert('Registration successful! Please log in.');
+                alert('註冊成功! 請登入。');
                 window.location.href = '/login';
             } else {
-                alert('Registration failed: ' + data.error);
+                alert('註冊失敗: ' + data.error);
             }
         });
 }
@@ -61,10 +61,10 @@ function resetPassword() {
     }).then(response => response.json())
         .then(data => {
             if (data.message) {
-                alert('Password reset successful! Please log in again.');
+                alert('密碼重置成功! 請重新登入。');
                 logout();
             } else {
-                alert('Password reset failed: ' + data.error);
+                alert('密碼重置失敗: ' + data.error);
             }
         });
 }

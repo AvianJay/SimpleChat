@@ -39,6 +39,10 @@ def api_register():
     data = get_request_data(request)
     if not data or 'username' not in data or 'email' not in data or 'password' not in data:
         return {'error': 'Invalid input'}, 400
+    if len(data['username']) < 3 or len(data['username']) > 20:
+        return {'error': 'Username must be between 3 and 20 characters'}, 400
+    if len(data['password']) < 8:
+        return {'error': 'Password must be at least 8 characters'}, 400
     if database.get_user(conn, email=data['email']) is not None:
         return {'error': 'Email already registered'}, 400
     if database.get_user(conn, user_name=data['username']) is not None:
