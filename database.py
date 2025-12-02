@@ -19,6 +19,16 @@ def init_database(db_name='app.db'):
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS user_dms (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            target_id INTEGER NOT NULL,
+            dm_id INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
     
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS groups (
@@ -43,9 +53,9 @@ def init_database(db_name='app.db'):
         CREATE TABLE IF NOT EXISTS messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             author INTEGER NOT NULL,
-            chat_id INTEGER NOT NULL,  -- can be user id or group id
+            chat_id INTEGER NOT NULL,  -- can be user_dms id or group id
             is_group BOOLEAN DEFAULT 0,
-            content TEXT NOT NULL UNIQUE,
+            content TEXT NOT NULL,
             edited BOOLEAN DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
@@ -134,7 +144,18 @@ def get_messages(conn, chat_id, group=False, limit=50):
         ORDER BY created_at DESC
         LIMIT ?
     ''', (chat_id, int(group), limit))
-    return cursor.fetchall()
+    messages = cursor.fetchall()
+    # convert messages to list of dictionaries
+    messages = [{
+        'id': message[0],
+        'author': message[1],
+        'chat_id': message[2],
+        'is_group': message[3],
+        'content': message[4],
+        'edited': message[5],
+        'created_at': message[6]
+    } for message in messages]
+    return messages
 
 def friend(conn, user_id, friend_id, status='pending'):
     """Create a friendship or update its status."""
@@ -144,7 +165,15 @@ def friend(conn, user_id, friend_id, status='pending'):
         VALUES (?, ?, ?)
         ON CONFLICT(user_id, friend_id) DO UPDATE SET status=excluded.status
     ''', (user_id, friend_id, status))
+    if status == 'accepted':
+        cursor.execute('''
+            INSERT INTO friendships (user_id, friend_id, status)
+            VALUES (?, ?, ?)
+            ON CONFLICT(user_id, friend_id) DO UPDATE SET status=excluded.status
+        ''', (friend_id, user_id, status))
     conn.commit()
+    if status == 'accepted':
+        create_user_dm(conn, user_id, friend_id)
     return cursor.lastrowid
 
 def friend_status(conn, user_id, friend_id):
@@ -186,12 +215,31 @@ def get_chats(conn, user_id):
     cursor = conn.cursor()
     # User chats
     cursor.execute('''
-        SELECT u.id, u.name, u.email, 'user' AS chat_type
-        FROM users u
-        JOIN friendships f ON u.id = f.friend_id
-        WHERE f.user_id = ? AND f.status = 'accepted'
-    ''', (user_id,))
+        SELECT
+            CASE
+                WHEN udm.user_id = ? THEN udm.target_id
+                ELSE udm.user_id
+            END AS friend_id,
+            u.name,
+            u.email,
+            udm.dm_id,
+            'user' AS chat_type
+        FROM user_dms udm
+        JOIN users u ON u.id = CASE
+                                    WHEN udm.user_id = ? THEN udm.target_id
+                                    ELSE udm.user_id
+                                END
+        JOIN friendships f ON (f.user_id = ? AND f.friend_id = u.id)
+        WHERE udm.user_id = ? AND f.status = 'accepted'
+    ''', (user_id, user_id, user_id, user_id))
     user_chats = cursor.fetchall()
+    user_chats = [{
+        'id': chat[3],
+        'name': chat[1],
+        'email': chat[2],
+        'user_id': chat[0],
+        'chat_type': 'user'
+    } for chat in user_chats]
     
     # Group chats
     cursor.execute('''
@@ -201,7 +249,14 @@ def get_chats(conn, user_id):
         WHERE gm.user_id = ?
     ''', (user_id,))
     group_chats = cursor.fetchall()
-    
+    # convert group chats to list of dictionaries
+    group_chats = [{
+        'id': chat[0],
+        'name': chat[1],
+        'description': chat[2],
+        'chat_type': 'group'
+    } for chat in group_chats]
+
     return user_chats + group_chats
 
 def add_group_member(conn, group_id, user_id, role='member'):
@@ -231,7 +286,15 @@ def get_group_members(conn, group_id):
         JOIN group_members gm ON u.id = gm.user_id
         WHERE gm.group_id = ?
     ''', (group_id,))
-    return cursor.fetchall()
+    # convert group members to list of dictionaries
+    group_members = cursor.fetchall()
+    group_members = [{
+        'id': member[0],
+        'name': member[1],
+        'email': member[2],
+        'role': member[3]
+    } for member in group_members]
+    return group_members
 
 def delete_friend(conn, user_id, friend_id):
     """Delete a friendship."""
@@ -267,7 +330,18 @@ def get_message(conn, message_id):
     cursor.execute('''
         SELECT * FROM messages WHERE id = ?
     ''', (message_id,))
-    return cursor.fetchone()
+    message = cursor.fetchone()
+    # convert message to dictionary
+    message = {
+        'id': message[0],
+        'author': message[1],
+        'chat_id': message[2],
+        'is_group': message[3],
+        'content': message[4],
+        'edited': message[5],
+        'created_at': message[6]
+    }
+    return message
 
 def delete_group(conn, group_id):
     """Delete a group and all its members and messages."""
@@ -278,4 +352,72 @@ def delete_group(conn, group_id):
     cursor.execute('DELETE FROM group_members WHERE group_id = ?', (group_id,))
     # Delete messages
     cursor.execute('DELETE FROM messages WHERE chat_id = ? AND is_group = 1', (group_id,))
+    conn.commit()
+
+def get_user_dm(conn, user_id=None, target_id=None, dm_id=None):
+    """Get a user DM."""
+    cursor = conn.cursor()
+    if dm_id:
+        if user_id:
+            cursor.execute('''
+                SELECT * FROM user_dms WHERE dm_id = ? AND user_id = ?
+            ''', (dm_id, user_id))
+        else:
+            cursor.execute('''
+                SELECT * FROM user_dms WHERE dm_id = ?
+            ''', (dm_id,))
+    else:
+        cursor.execute('''
+            SELECT * FROM user_dms WHERE user_id = ? AND target_id = ?
+        ''', (user_id, target_id))
+    user_dm = cursor.fetchone()
+    # convert user_dm to dictionary
+    user_dm = {
+        'id': user_dm[3],
+        'user_id': user_dm[1],
+        'target_id': user_dm[2],
+        'created_at': user_dm[4]
+    }
+    return user_dm
+
+def get_user_dms(conn, user_id):
+    """Get all DMs of a user."""
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT * FROM user_dms WHERE user_id = ?
+    ''', (user_id,))
+    # convert user_dms to list of dictionaries
+    user_dms = cursor.fetchall()
+    user_dms = [{
+        'id': user_dm[3],
+        'user_id': user_dm[1],
+        'target_id': user_dm[2],
+        'created_at': user_dm[4]
+    } for user_dm in user_dms]
+    return user_dms
+
+def create_user_dm(conn, user_id, target_id):
+    """Create a new user DM."""
+    # check there is no existing DM between user and target
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT * FROM user_dms WHERE user_id = ? AND target_id = ?
+    ''', (user_id, target_id))
+    if cursor.fetchone():
+        return
+    while True:
+        dm_id = random.randint(1, 1000000)
+        cursor.execute('''
+            SELECT * FROM user_dms WHERE id = ?
+        ''', (dm_id,))
+        if not cursor.fetchone():
+            break
+    cursor.execute('''
+        INSERT INTO user_dms (user_id, target_id, dm_id)
+        VALUES (?, ?, ?)
+    ''', (user_id, target_id, dm_id))
+    cursor.execute('''
+        INSERT INTO user_dms (user_id, target_id, dm_id)
+        VALUES (?, ?, ?)
+    ''', (target_id, user_id, dm_id))
     conn.commit()

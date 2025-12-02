@@ -6,6 +6,7 @@ class ChatApp {
         this.reconnectAttempts = 0;
         this.maxReconnectAttempts = 5;
         this.currentUser = null;
+        this.cachedUsers = new Map();
     }
 
     init() {
@@ -162,6 +163,24 @@ class ChatApp {
         return data.user;
     }
 
+    async fetchUser(id) {
+        const res = await fetch(`/api/user/${id}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: this.token })
+        });
+        const data = await res.json();
+        this.cachedUsers.set(id, data.user);
+        return data.user;
+    }
+
+    async getUser(id) {
+        if (this.cachedUsers.has(id)) {
+            return this.cachedUsers.get(id);
+        }
+        return await this.fetchUser(id);
+    }
+
     initSocket() {
         this.socket = io();
         this.socket.on('connect', () => {
@@ -193,6 +212,8 @@ class ChatApp {
                 this.handleError('連線失敗，請檢查您的網路');
             }
         });
+
+        this.socket.on('message', (msg) => this.displayMessage(msg));
     }
 
     async loadChats() {
@@ -207,7 +228,7 @@ class ChatApp {
             const li = document.createElement('li');
             li.textContent = chat.name;
             li.addEventListener('click', () => {
-                window.location.hash = `#${chat.id}`;
+                window.location.hash = `#${chat.chat_type}/${chat.id}`;
                 // Update active state
                 document.querySelectorAll('#chat-list li').forEach(el => el.classList.remove('active'));
                 li.classList.add('active');
@@ -219,7 +240,8 @@ class ChatApp {
     }
 
     async onHashChange() {
-        const chatId = window.location.hash.substring(1);
+        const chatType = window.location.hash.split('/')[0];
+        const chatId = window.location.hash.split('/')[1];
         if (!chatId) {
             this.chatNameElem.innerText = '選擇聊天';
             this.messagesDiv.innerHTML = '<div class="empty-state"><p>選擇一個對話開始聊天</p></div>';
@@ -227,7 +249,7 @@ class ChatApp {
             return;
         }
 
-        const res = await fetch('/api/chats', {
+        const res = await fetch(`/api/chats`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ token: this.token })
@@ -247,27 +269,30 @@ class ChatApp {
             else li.classList.remove('active');
         });
 
-        await this.loadMessages(chatId);
+        await this.loadMessages(chatType, chatId);
         this.enableChatInterface(true);
     }
 
-    async loadMessages(chatId) {
-        const res = await fetch('/api/messages', {
+    async loadMessages(chatType, chatId) {
+        const res = await fetch(`/api/messages`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token: this.token, chat_id: chatId })
+            body: JSON.stringify({ token: this.token, chat_id: chatId, is_group: chatType === 'group' })
         });
         const data = await res.json();
         this.messagesDiv.innerHTML = '';
         if (data.messages.length === 0) {
             this.messagesDiv.innerHTML = '<div class="empty-state"><p>尚無訊息</p></div>';
         } else {
-            data.messages.forEach(msg => this.displayMessage(msg));
+            for (const msg of data.messages) {
+                await this.displayMessage(msg);
+            }
         }
     }
 
     async sendMessage() {
-        const chatId = window.location.hash.substring(1);
+        const chatType = window.location.hash.split('/')[0];
+        const chatId = window.location.hash.split('/')[1];
         const message = this.messageInput.value.trim();
         if (!chatId) return this.handleError('請選擇聊天對象');
         if (!message) return this.handleError('請輸入訊息內容');
@@ -277,7 +302,7 @@ class ChatApp {
             const res = await fetch('/api/message/send', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ token: this.token, recipient_id: chatId, content: message })
+                body: JSON.stringify({ token: this.token, recipient_id: chatId, content: message, is_group: chatType === 'group' })
             });
             if (!res.ok) throw new Error('send failed');
             this.messageInput.value = '';
@@ -287,7 +312,7 @@ class ChatApp {
         }
     }
 
-    displayMessage(msg) {
+    async displayMessage(msg) {
         // Remove empty state if present
         const emptyState = this.messagesDiv.querySelector('.empty-state');
         if (emptyState) emptyState.remove();
@@ -298,7 +323,14 @@ class ChatApp {
 
         const author = document.createElement('span');
         author.className = 'message-author';
-        author.textContent = isMe ? '你' : `用戶 ${msg.author}`;
+        let authorName = 'Unknown';
+        if (isMe) {
+            authorName = '你';
+        } else {
+            const user = await this.getUser(msg.author);
+            authorName = user ? user.username : `${msg.author}`;
+        }
+        author.textContent = authorName;
 
         const content = document.createElement('div');
         content.className = 'message-content';

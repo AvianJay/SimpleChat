@@ -112,7 +112,7 @@ def api_friend_request():
         if database.friend_status(conn, data['friend_id'], user[0]) == 'pending':
             # update the status to accepted
             database.friend(conn, user[0], data['friend_id'], status='accepted')
-            database.friend(conn, data['friend_id'], user[0], status='accepted')
+            # database.friend(conn, data['friend_id'], user[0], status='accepted')
             return {'message': 'Friend request accepted'}, 200
         else:
             database.friend(conn, user[0], data['friend_id'], status='pending')
@@ -149,12 +149,16 @@ def api_get_user(user_id):
         return {'error': 'Invalid input'}, 400
     if not verify_user(data['token']):
         return {'error': 'Invalid token'}, 401
+    me = database.get_user(conn, token=data['token'])
     if user_id == 'me':
-        user = database.get_user(conn, token=data['token'])
+        user = me
     else:
         user = database.get_user(conn, user_id=user_id)
-    if user is None:
-        return {'error': 'User not found'}, 404
+        if user is None:
+            return {'error': 'User not found'}, 404
+        # check if user is friend of me
+        if user[0] not in [f[0] for f in database.get_friends(conn, me[0])]:
+            return {'error': 'Not friends'}, 403
     user_data = {
         'id': user[0],
         'username': user[1],
@@ -291,12 +295,17 @@ def api_send_message():
         if not any(m[0] == user[0] for m in members):
              return {'error': 'Not a member of this group'}, 403
     else:
-        recipient = database.get_user(conn, user_id=recipient_id)
+        recipient = database.get_user_dm(conn, user_id=user[0], dm_id=recipient_id)
         if recipient is None:
             return {'error': 'Recipient not found'}, 404
+        if recipient['user_id'] != user[0]:
+            return {'error': 'Not authorized'}, 403
 
     # use create_message from database module
     message_id = database.create_message(conn, user[0], recipient_id, data['content'], group=is_group)
+    message = database.get_message(conn, message_id)
+    emit('message', message, namespace='/chat', to=recipient_id)
+    emit('message', message, namespace='/chat', to=user[0])
     return {'message': 'Message sent', 'message_id': message_id}, 200
 
 @app.route('/api/messages', methods=['POST'])
