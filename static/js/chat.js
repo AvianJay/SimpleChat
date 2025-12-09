@@ -275,6 +275,7 @@ class ChatApp {
 
     async onHashChange() {
         const chatType = window.location.hash.split('/')[0];
+        chatType = chatType.replace('#', '');
         const chatId = window.location.hash.split('/')[1];
         this.currentChatId = chatId;
 
