@@ -117,6 +117,8 @@ def api_friend_request():
             # update the status to accepted
             database.friend(conn, user[0], data['friend_id'], status='accepted')
             # database.friend(conn, data['friend_id'], user[0], status='accepted')
+            emit('update_chat_list', namespace='/chat', to=str(user[0]))
+            emit('update_chat_list', namespace='/chat', to=str(data['friend_id']))
             return {'message': 'Friend request accepted'}, 200
         else:
             database.friend(conn, user[0], data['friend_id'], status='pending')

@@ -207,6 +207,8 @@ class ChatApp {
 
         this.socket.on('new_message', (msg) => this.displayMessage(msg));
 
+        this.socket.on('update_chat_list', () => { this.loadChats(); });
+
         this.socket.on('disconnect', () => {
             console.log('Socket disconnected');
             this.enableChatInterface(false);
