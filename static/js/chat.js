@@ -45,6 +45,12 @@ class ChatApp {
         this.messagesDiv = document.getElementById('messages');
         this.chatNameElem = document.getElementById('chat-name');
         this.errorElem = document.getElementById('error-message');
+        this.chatContainer = document.querySelector('.chat-container');
+        this.mobileBackBtn = document.getElementById('mobile-back-btn');
+
+        this.mobileBackBtn.addEventListener('click', () => {
+            window.location.hash = '';
+        });
 
         this.sendButton.addEventListener('click', () => this.sendMessage());
         this.messageInput.addEventListener('keypress', (e) => {
@@ -252,6 +258,14 @@ class ChatApp {
     async onHashChange() {
         const chatType = window.location.hash.split('/')[0];
         const chatId = window.location.hash.split('/')[1];
+
+        // Toggle Mobile View Class
+        if (chatId) {
+            this.chatContainer.classList.add('mobile-chat-active');
+        } else {
+            this.chatContainer.classList.remove('mobile-chat-active');
+        }
+
         if (!chatId) {
             this.chatNameElem.innerText = '選擇聊天';
             this.messagesDiv.innerHTML = '<div class="empty-state"><p>選擇一個對話開始聊天</p></div>';
