@@ -7,6 +7,7 @@ class ChatApp {
         this.maxReconnectAttempts = 5;
         this.currentUser = null;
         this.currentChatId = null;
+        this.chats = [];
         this.cachedUsers = new Map();
     }
 
@@ -105,15 +106,15 @@ class ChatApp {
             });
             const data = await res.json();
             if (res.ok) {
-                alert('好友邀請已發送');
+                this.showToast('好友邀請已發送', '', null, "green");
                 this.addFriendModal.style.display = 'none';
                 this.friendIdInput.value = '';
             } else {
-                alert(data.error || '發送失敗');
+                this.showToast('好友邀請失敗', data.error || '發送失敗', null, "red");
             }
         } catch (e) {
             console.error(e);
-            alert('發送失敗');
+            this.showToast('好友邀請失敗', e, null, "red");
         }
     }
 
@@ -155,15 +156,15 @@ class ChatApp {
             });
             const data = await res.json();
             if (res.ok) {
-                alert('已接受好友邀請');
+                this.showToast('已接受好友邀請', '', null, "green");
                 this.loadFriendRequests(); // Reload list
-                this.loadChats(); // Reload chats
+                // this.loadChats(); // Reload chats
             } else {
-                alert(data.error || '操作失敗');
+                this.showToast('接受好友邀請失敗', data.error || '操作失敗', null, "red");
             }
         } catch (e) {
             console.error(e);
-            alert('操作失敗');
+            this.showToast('接受好友邀請失敗', e, null, "red");
         }
     }
 
@@ -203,6 +204,7 @@ class ChatApp {
 
         this.socket.on('authenticated', () => {
             console.log('Authenticated');
+            this.loadChats();
             this.enableChatInterface(true);
         });
 
@@ -212,9 +214,21 @@ class ChatApp {
             setTimeout(() => this.redirectToLogin(), 1500);
         });
 
-        this.socket.on('new_message', (msg) => this.displayMessage(msg));
-
         this.socket.on('update_chat_list', () => { this.loadChats(); });
+
+        this.socket.on('friend_request_accepted', (data) => {
+            this.showToast('好友邀請', `${data.name} 接受了你的好友邀請`, () => {
+                window.location.hash = `#user/${data.chat_id}`
+            }, "green");
+            this.loadChats();
+        });
+
+        this.socket.on('got_friend_request', (data) => {
+            this.showToast('好友邀請', `${data.name} 想要加你為好友`, () => {
+                this.friendRequestsModal.style.display = 'block';
+                this.loadFriendRequests();
+            }, "green");
+        });
 
         this.socket.on('disconnect', () => {
             console.log('Socket disconnected');
@@ -229,7 +243,7 @@ class ChatApp {
             }
         });
 
-        this.socket.on('message', (msg) => this.displayMessage(msg));
+        this.socket.on('message', (msg) => this.displayMessage(msg, true));
     }
 
     async loadChats() {
@@ -239,6 +253,7 @@ class ChatApp {
             body: JSON.stringify({ token: this.token })
         });
         const data = await res.json();
+        this.chats = data.chats;
         this.chatList.innerHTML = '';
         data.chats.forEach(chat => {
             const li = document.createElement('li');
@@ -258,6 +273,7 @@ class ChatApp {
     async onHashChange() {
         const chatType = window.location.hash.split('/')[0];
         const chatId = window.location.hash.split('/')[1];
+        this.currentChatId = chatId;
 
         // Toggle Mobile View Class
         if (chatId) {
@@ -273,13 +289,7 @@ class ChatApp {
             return;
         }
 
-        const res = await fetch(`/api/chats`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token: this.token })
-        });
-        const data = await res.json();
-        const chat = data.chats.find(c => String(c.id) === String(chatId));
+        const chat = this.chats.find(c => String(c.id) === String(chatId));
         if (!chat) {
             // alert('Chat not found');
             return;
@@ -295,7 +305,6 @@ class ChatApp {
 
         await this.loadMessages(chatType, chatId);
         this.enableChatInterface(true);
-        this.currentChatId = chatId;
         // record last visited chat
         localStorage.setItem('last_chat', `${chatType}/${chatId}`);
     }
@@ -314,7 +323,7 @@ class ChatApp {
             // sort messages by timestamp
             data.messages.sort((a, b) => a.timestamp - b.timestamp);
             for (const msg of data.messages) {
-                await this.displayMessage(msg);
+                await this.displayMessage(msg, false);
             }
         }
     }
@@ -341,29 +350,37 @@ class ChatApp {
         }
     }
 
-    async displayMessage(msg) {
+    async displayMessage(msg, notify) {
         // Remove empty state if present
         const emptyState = this.messagesDiv.querySelector('.empty-state');
         if (emptyState) emptyState.remove();
 
-        if (this.currentChatId && String(msg.chat_id) !== String(this.currentChatId)) {
+        const isMe = this.currentUser && String(msg.author) === String(this.currentUser.id);
+        let authorName = 'Unknown';
+        let user;
+        if (isMe) {
+            authorName = '你';
+        } else {
+            user = await this.getUser(msg.author);
+            authorName = user ? user.username : `${msg.author}`;
+        }
+
+        if (!this.currentChatId || String(msg.chat_id) !== String(this.currentChatId)) {
             // Message does not belong to current chat
+            if (!notify) return;
+            if (isMe) return;
+            const chatLinkType = msg.is_group ? 'group' : 'user';
+            this.showToast(authorName, msg.content, () => {
+                window.location.hash = `#${chatLinkType}/${msg.chat_id}`;
+            }, "blue");
             return;
         }
 
         const el = document.createElement('div');
-        const isMe = this.currentUser && String(msg.author) === String(this.currentUser.id);
         el.className = `message ${isMe ? 'outgoing' : 'incoming'}`;
 
         const author = document.createElement('span');
         author.className = 'message-author';
-        let authorName = 'Unknown';
-        if (isMe) {
-            authorName = '你';
-        } else {
-            const user = await this.getUser(msg.author);
-            authorName = user ? user.username : `${msg.author}`;
-        }
         author.textContent = authorName;
 
         const content = document.createElement('div');
@@ -411,6 +428,75 @@ class ChatApp {
     redirectToLogin() {
         localStorage.removeItem('token');
         window.location.href = '/login';
+    }
+
+    showToast(title, message, onClick = null, color = null) {
+        const container = document.getElementById('toast-container');
+        if (!container) return;
+
+        const toast = document.createElement('div');
+        toast.className = 'toast';
+
+        // Apply color if provided
+        if (color) {
+            toast.style.borderLeftColor = color;
+        }
+
+        const header = document.createElement('div');
+        header.className = 'toast-header';
+
+        const titleEl = document.createElement('div');
+        titleEl.className = 'toast-title';
+        titleEl.textContent = title;
+
+        header.appendChild(titleEl);
+
+        const msgEl = document.createElement('div');
+        msgEl.className = 'toast-message';
+        msgEl.textContent = message;
+
+        const progressContainer = document.createElement('div');
+        progressContainer.className = 'toast-progress';
+
+        const progressBar = document.createElement('div');
+        progressBar.className = 'toast-progress-bar';
+        if (color) {
+            progressBar.style.backgroundColor = color;
+        } else {
+            progressBar.style.backgroundColor = 'var(--primary)';
+        }
+
+        progressContainer.appendChild(progressBar);
+
+        toast.appendChild(header);
+        toast.appendChild(msgEl);
+        toast.appendChild(progressContainer);
+
+        // Click Event
+        toast.addEventListener('click', () => {
+            if (onClick) onClick();
+            removeToast();
+        });
+
+        // Add to container
+        container.appendChild(toast);
+
+        // Auto remove after 5 seconds
+        const timer = setTimeout(() => {
+            removeToast();
+        }, 5000);
+
+        function removeToast() {
+            clearTimeout(timer);
+            toast.style.animation = 'none'; // Clear entry animation
+            toast.style.opacity = '0';
+            toast.style.transition = 'opacity 0.3s';
+            setTimeout(() => {
+                if (toast.parentElement) {
+                    toast.remove();
+                }
+            }, 300);
+        }
     }
 }
 

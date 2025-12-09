@@ -1,0 +1,113 @@
+/* Toast Notifications */
+#toast-container {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.toast {
+    background: white;
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+    padding: 16px;
+    min-width: 300px;
+    max-width: 350px;
+    position: relative;
+    overflow: hidden;
+    animation: toast-in 0.3s ease-out;
+    cursor: pointer;
+    border-left: 4px solid var(--primary);
+    /* Default color */
+}
+
+@keyframes toast-in {
+    from {
+        transform: translateX(-20px);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+.toast-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+}
+
+.toast-title {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text-primary);
+}
+
+.toast-message {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+
+.toast-progress {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    height: 3px;
+    background: rgba(0, 0, 0, 0.1);
+    width: 100%;
+}
+
+.toast-progress-bar {
+    height: 100%;
+    background: currentColor;
+    /* Inherits from text color or set explicitly */
+    width: 100%;
+    animation: progress-shrink 5s linear forwards;
+}
+
+@keyframes progress-shrink {
+    from {
+        width: 100%;
+    }
+
+    to {
+        width: 0%;
+    }
+}
+
+/* Mobile Toast Positioning */
+@media (max-width: 768px) {
+    #toast-container {
+        bottom: auto;
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 90%;
+        max-width: 400px;
+        align-items: center;
+    }
+
+    .toast {
+        width: 100%;
+        animation: toast-in-mobile 0.3s ease-out;
+    }
+
+    @keyframes toast-in-mobile {
+        from {
+            transform: translateY(-20px);
+            opacity: 0;
+        }
+
+        to {
+            transform: translateY(0);
+            opacity: 1;
+        }
+    }
+}

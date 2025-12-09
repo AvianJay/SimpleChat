@@ -119,9 +119,11 @@ def api_friend_request():
             # database.friend(conn, data['friend_id'], user[0], status='accepted')
             emit('update_chat_list', namespace='/chat', to=str(user[0]))
             emit('update_chat_list', namespace='/chat', to=str(data['friend_id']))
+            emit('friend_request_accepted', {'user_id': user[0], 'name': user[1]}, namespace='/chat', to=str(data['friend_id']))
             return {'message': 'Friend request accepted'}, 200
         else:
             database.friend(conn, user[0], data['friend_id'], status='pending')
+            emit('got_friend_request', {'user_id': user[0], 'name': user[1]}, namespace='/chat', to=str(data['friend_id']))
             return {'message': 'Friend request sent'}, 200
 
 @app.route('/api/friends', methods=['POST'])
@@ -398,41 +400,6 @@ def handle_authenticate(data):
     except Exception as e:
         print("Failed to join room:", str(e))
     emit('authenticated', {'message': 'Authenticated successfully'})
-
-@socketio.on('send_message', namespace='/chat')
-def handle_send_message(data):
-    user_id = session.get('user_id')
-    if not user_id:
-        emit('error', {'error': 'Not authenticated'})
-        return
-    recipient_id = data.get('recipient_id')
-    content = data.get('content')
-    if not recipient_id or not content:
-        emit('error', {'error': 'Invalid input'})
-        return
-    # Verify recipient exists
-    try:
-        recipient_id = int(recipient_id)
-    except (ValueError, TypeError):
-        emit('error', {'error': 'Invalid recipient ID'})
-        return
-
-    recipient = database.get_user(conn, user_id=recipient_id)
-    if recipient is None:
-        emit('error', {'error': 'Recipient not found'})
-        return
-    message_id = database.create_message(conn, user_id, recipient_id, content, group=False)
-    message_data = {
-        'id': message_id,
-        'author': user_id,
-        'chat_id': recipient_id,
-        'is_group': False,
-        'content': content,
-        'edited': False,
-        'created_at': database.get_messages(conn, message_id)[6]
-    }
-    emit('new_message', message_data, to=str(recipient_id))
-    emit('new_message', message_data, to=str(user_id))  # also emit to sender
 
 @socketio.on('send_friend_request', namespace='/chat')
 def handle_send_friend_request(data):
