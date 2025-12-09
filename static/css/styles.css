@@ -37,6 +37,8 @@ body {
     background-color: var(--bg-app);
     color: var(--text-primary);
     height: 100vh;
+    /* Fallback */
+    height: var(--app-height, 100vh);
     display: flex;
     justify-content: center;
     align-items: center;
@@ -58,6 +60,8 @@ body {
     width: 95%;
     max-width: 1200px;
     height: 90vh;
+    /* Fallback */
+    height: calc(var(--app-height, 100vh) * 0.9);
     background: var(--bg-card);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-lg);

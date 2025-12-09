@@ -17,6 +17,9 @@ class ChatApp {
             return;
         }
 
+        this.updateAppHeight();
+        window.addEventListener('resize', () => this.updateAppHeight());
+
         this.setupDom();
         this.fetchCurrentUser()
             .then(user => {
@@ -497,6 +500,10 @@ class ChatApp {
                 }
             }, 300);
         }
+    }
+
+    updateAppHeight() {
+        document.documentElement.style.setProperty('--app-height', `${window.innerHeight}px`);
     }
 }
 
