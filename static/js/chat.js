@@ -394,7 +394,15 @@ class ChatApp {
         el.appendChild(author);
         el.appendChild(content);
 
-        if (msg.created_at) {
+        if (msg.timestamp) {
+            const t = new Date(msg.timestamp * 1000);
+            const ct = new Date();
+            let timetext;
+            if (t.toDateString() === ct.toDateString()) {
+                timetext = t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            } else {
+                timetext = `${t.toLocaleDateString()} ${t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+            }
             const time = document.createElement('span');
             time.className = 'message-time';
             time.style.fontSize = '10px';
@@ -402,7 +410,7 @@ class ChatApp {
             time.style.display = 'block';
             time.style.textAlign = 'right';
             time.style.marginTop = '4px';
-            time.textContent = new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            time.textContent = timetext;
             el.appendChild(time);
         }
 
