@@ -6,6 +6,7 @@ class ChatApp {
         this.reconnectAttempts = 0;
         this.maxReconnectAttempts = 5;
         this.currentUser = null;
+        this.currentChatId = null;
         this.cachedUsers = new Map();
     }
 
@@ -280,6 +281,7 @@ class ChatApp {
 
         await this.loadMessages(chatType, chatId);
         this.enableChatInterface(true);
+        this.currentChatId = chatId;
         // record last visited chat
         localStorage.setItem('last_chat', `${chatType}/${chatId}`);
     }
@@ -329,6 +331,11 @@ class ChatApp {
         // Remove empty state if present
         const emptyState = this.messagesDiv.querySelector('.empty-state');
         if (emptyState) emptyState.remove();
+
+        if (this.currentChatId && String(msg.chat_id) !== String(this.currentChatId)) {
+            // Message does not belong to current chat
+            return;
+        }
 
         const el = document.createElement('div');
         const isMe = this.currentUser && String(msg.author) === String(this.currentUser.id);
