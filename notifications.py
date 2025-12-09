@@ -3,9 +3,9 @@ from pywebpush import webpush, WebPushException
 from config import config
 import database
 import os
+from py_vapid import Vapid
 
 # VAPID keys should be stored securely
-# Generate with: python -c "from pywebpush import webpush; print(webpush.generate_vapid_keys())"
 VAPID_PRIVATE_KEY = None
 VAPID_PUBLIC_KEY = None
 VAPID_CLAIMS = {
@@ -28,10 +28,22 @@ def init_vapid_keys():
     
     # If still not found, generate new keys
     if not VAPID_PRIVATE_KEY or not VAPID_PUBLIC_KEY:
-        from pywebpush import generate_vapid_keys
-        vapid_keys = generate_vapid_keys()
-        VAPID_PRIVATE_KEY = vapid_keys['privateKey']
-        VAPID_PUBLIC_KEY = vapid_keys['publicKey']
+        vapid = Vapid()
+        vapid.generate_keys()
+        
+        # Save to temporary files
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.pem') as f:
+            vapid.save_key(f.name)
+            with open(f.name, 'r') as pem_file:
+                VAPID_PRIVATE_KEY = pem_file.read()
+            os.unlink(f.name)
+        
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.pem') as f:
+            vapid.save_public_key(f.name)
+            with open(f.name, 'r') as pem_file:
+                VAPID_PUBLIC_KEY = pem_file.read()
+            os.unlink(f.name)
         
         # Save to config
         config('vapid_private_key', VAPID_PRIVATE_KEY, mode='w')
