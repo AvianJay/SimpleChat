@@ -2,21 +2,6 @@
 
 let pushSubscription = null;
 
-// Convert PEM public key to base64url format for applicationServerKey
-function pemToBase64Url(pemKey) {
-    // Remove header, footer, and newlines from PEM
-    const base64 = pemKey
-        .replace(/-----BEGIN PUBLIC KEY-----/, '')
-        .replace(/-----END PUBLIC KEY-----/, '')
-        .replace(/\s/g, '');
-    
-    // Convert base64 to base64url
-    return base64
-        .replace(/\+/g, '-')
-        .replace(/\//g, '_')
-        .replace(/=+$/, '');
-}
-
 // Convert VAPID public key from base64url to Uint8Array
 function urlBase64ToUint8Array(base64String) {
     const padding = '='.repeat((4 - base64String.length % 4) % 4);
@@ -68,10 +53,7 @@ async function subscribeToPushNotifications() {
         // Get VAPID public key from server
         const response = await fetch('/api/vapid_public_key');
         const data = await response.json();
-        const vapidPublicKeyPem = data.publicKey;
-        
-        // Convert PEM to base64url format
-        const vapidPublicKey = pemToBase64Url(vapidPublicKeyPem);
+        const vapidPublicKey = data.publicKey;
         
         // Subscribe to push notifications
         const subscription = await registration.pushManager.subscribe({

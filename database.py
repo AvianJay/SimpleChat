@@ -83,6 +83,17 @@ def init_database(db_name='app.db'):
             FOREIGN KEY (user_id) REFERENCES users (id)
         )
     ''')
+    
+    # Create indexes for better performance
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user_id 
+        ON push_subscriptions(user_id)
+    ''')
+    
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_push_subscriptions_endpoint 
+        ON push_subscriptions(endpoint)
+    ''')
 
     conn.commit()
     conn.close()

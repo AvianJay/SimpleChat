@@ -3,18 +3,23 @@ from pywebpush import webpush, WebPushException
 from config import config
 import database
 import os
+import tempfile
+import base64
 from py_vapid import Vapid
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.backends import default_backend
 
 # VAPID keys should be stored securely
 VAPID_PRIVATE_KEY = None
 VAPID_PUBLIC_KEY = None
+VAPID_PUBLIC_KEY_BASE64URL = None
 VAPID_CLAIMS = {
     "sub": "mailto:admin@simplechat.local"
 }
 
 def init_vapid_keys():
     """Initialize VAPID keys from config or environment variables."""
-    global VAPID_PRIVATE_KEY, VAPID_PUBLIC_KEY
+    global VAPID_PRIVATE_KEY, VAPID_PUBLIC_KEY, VAPID_PUBLIC_KEY_BASE64URL
     
     # Try to get from environment variables first
     VAPID_PRIVATE_KEY = os.environ.get('VAPID_PRIVATE_KEY')
@@ -32,25 +37,50 @@ def init_vapid_keys():
         vapid.generate_keys()
         
         # Save to temporary files
-        import tempfile
         with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.pem') as f:
-            vapid.save_key(f.name)
-            with open(f.name, 'r') as pem_file:
+            temp_priv = f.name
+            vapid.save_key(temp_priv)
+        
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.pem') as f:
+            temp_pub = f.name
+            vapid.save_public_key(temp_pub)
+        
+        try:
+            with open(temp_priv, 'r') as pem_file:
                 VAPID_PRIVATE_KEY = pem_file.read()
-            os.unlink(f.name)
-        
-        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.pem') as f:
-            vapid.save_public_key(f.name)
-            with open(f.name, 'r') as pem_file:
+            
+            with open(temp_pub, 'r') as pem_file:
                 VAPID_PUBLIC_KEY = pem_file.read()
-            os.unlink(f.name)
-        
-        # Save to config
-        config('vapid_private_key', VAPID_PRIVATE_KEY, mode='w')
-        config('vapid_public_key', VAPID_PUBLIC_KEY, mode='w')
-        print("Generated new VAPID keys and saved to config")
+            
+            # Save to config
+            config('vapid_private_key', VAPID_PRIVATE_KEY, mode='w')
+            config('vapid_public_key', VAPID_PUBLIC_KEY, mode='w')
+            print("Generated new VAPID keys and saved to config")
+        finally:
+            # Clean up temporary files
+            os.unlink(temp_priv)
+            os.unlink(temp_pub)
     
-    return VAPID_PUBLIC_KEY
+    # Load the private key using cryptography
+    private_key = serialization.load_pem_private_key(
+        VAPID_PRIVATE_KEY.encode('utf-8'),
+        password=None,
+        backend=default_backend()
+    )
+    
+    # Get the public key from the private key
+    public_key = private_key.public_key()
+    
+    # Extract the raw public key bytes (65 bytes for uncompressed P-256)
+    public_key_bytes = public_key.public_bytes(
+        encoding=serialization.Encoding.X962,
+        format=serialization.PublicFormat.UncompressedPoint
+    )
+    
+    # Convert to base64url format (used by browser Push API)
+    VAPID_PUBLIC_KEY_BASE64URL = base64.urlsafe_b64encode(public_key_bytes).decode('utf-8').rstrip('=')
+    
+    return VAPID_PUBLIC_KEY_BASE64URL
 
 def send_push_notification(subscription_info, notification_data):
     """
@@ -108,7 +138,7 @@ def send_notification_to_user(conn, user_id, notification_data):
     
     for sub in subscriptions:
         result = send_push_notification(sub, notification_data)
-        if result == True:
+        if result is True:
             success_count += 1
         elif result == 'gone':
             # Remove invalid subscription
