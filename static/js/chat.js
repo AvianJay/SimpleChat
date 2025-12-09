@@ -25,7 +25,14 @@ class ChatApp {
                 this.currentUser = user;
                 document.getElementById('welcome-message').innerText = `歡迎, ${user.username}`;
                 this.initSocket();
-                this.loadChats();
+                this.loadChats()
+                    .then(() => {
+                        // Load last visited chat from localStorage
+                        const lastChat = localStorage.getItem('last_chat');
+                        if (lastChat) {
+                            window.location.hash = `#${lastChat}`;
+                        }
+                    });
             })
             .catch(() => window.location.href = '/login');
     }
@@ -271,6 +278,8 @@ class ChatApp {
 
         await this.loadMessages(chatType, chatId);
         this.enableChatInterface(true);
+        // record last visited chat
+        localStorage.setItem('last_chat', `${chatType}/${chatId}`);
     }
 
     async loadMessages(chatType, chatId) {
