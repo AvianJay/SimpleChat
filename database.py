@@ -71,6 +71,18 @@ def init_database(db_name='app.db'):
             PRIMARY KEY (user_id, friend_id)
         )
     ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS push_subscriptions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            endpoint TEXT NOT NULL,
+            p256dh TEXT NOT NULL,
+            auth TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users (id)
+        )
+    ''')
 
     conn.commit()
     conn.close()
@@ -424,3 +436,56 @@ def create_user_dm(conn, user_id, target_id):
         VALUES (?, ?, ?)
     ''', (target_id, user_id, dm_id))
     conn.commit()
+
+def create_push_subscription(conn, user_id, endpoint, p256dh, auth):
+    """Create or update a push subscription for a user."""
+    cursor = conn.cursor()
+    # Check if subscription already exists for this user and endpoint
+    cursor.execute('''
+        SELECT id FROM push_subscriptions 
+        WHERE user_id = ? AND endpoint = ?
+    ''', (user_id, endpoint))
+    existing = cursor.fetchone()
+    
+    if existing:
+        # Update existing subscription
+        cursor.execute('''
+            UPDATE push_subscriptions 
+            SET p256dh = ?, auth = ?
+            WHERE user_id = ? AND endpoint = ?
+        ''', (p256dh, auth, user_id, endpoint))
+    else:
+        # Create new subscription
+        cursor.execute('''
+            INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth)
+            VALUES (?, ?, ?, ?)
+        ''', (user_id, endpoint, p256dh, auth))
+    conn.commit()
+    return cursor.lastrowid
+
+def get_push_subscriptions(conn, user_id):
+    """Get all push subscriptions for a user."""
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT id, endpoint, p256dh, auth, created_at
+        FROM push_subscriptions
+        WHERE user_id = ?
+    ''', (user_id,))
+    subscriptions = cursor.fetchall()
+    return [{
+        'id': sub[0],
+        'endpoint': sub[1],
+        'p256dh': sub[2],
+        'auth': sub[3],
+        'created_at': sub[4]
+    } for sub in subscriptions]
+
+def delete_push_subscription(conn, user_id, endpoint):
+    """Delete a push subscription."""
+    cursor = conn.cursor()
+    cursor.execute('''
+        DELETE FROM push_subscriptions
+        WHERE user_id = ? AND endpoint = ?
+    ''', (user_id, endpoint))
+    conn.commit()
+    return cursor.rowcount > 0

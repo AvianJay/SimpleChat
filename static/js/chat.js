@@ -519,4 +519,11 @@ class ChatApp {
 document.addEventListener('DOMContentLoaded', () => {
     window.chatApp = new ChatApp();
     window.chatApp.init();
+    
+    // Initialize push notifications
+    if (window.pushNotifications) {
+        window.pushNotifications.init().catch(err => {
+            console.error('Failed to initialize push notifications:', err);
+        });
+    }
 });
