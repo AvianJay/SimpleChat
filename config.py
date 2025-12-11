@@ -20,6 +20,8 @@ default_config = {
     "ssl_key": "",
     "debug": False,
     "database_path": "app.db",
+    "vapid_private_key": None,
+    "vapid_public_key": None,
 }
 _config = None
 
@@ -31,7 +33,8 @@ try:
             print("Config file is not a valid JSON object, resetting to default config.")
             _config = default_config.copy()
         for key in _config.keys():
-            if not isinstance(_config[key], type(default_config[key])):
+            # Skip type checking for None values in default config
+            if default_config.get(key) is not None and not isinstance(_config[key], type(default_config[key])):
                 print(f"Config key '{key}' has an invalid type, resetting to default value.")
                 _config[key] = default_config[key]
         if "config_version" not in _config:

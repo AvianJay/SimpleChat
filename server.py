@@ -1,10 +1,11 @@
-from flask import Flask, request, render_template
+from flask import Flask, request, render_template, jsonify
 from flask_socketio import SocketIO, emit, join_room
 from flask import session
 import database
 import hashlib
 import os
 from config import config
+import notifications
 
 database.init_database(config("database_path"))
 conn = database.create_connection(config("database_path"))
@@ -13,6 +14,9 @@ app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY') or os.urandom(24)
 # manage_session=True lets Flask-SocketIO use Flask's session inside events
 socketio = SocketIO(app, manage_session=True)
+
+# Initialize VAPID keys for push notifications
+VAPID_PUBLIC_KEY = notifications.init_vapid_keys()
 
 def verify_user(token, admin_required=False):
     user = database.get_user(conn, token=token)
@@ -120,10 +124,14 @@ def api_friend_request():
             emit('update_chat_list', namespace='/chat', to=str(user[0]))
             emit('update_chat_list', namespace='/chat', to=str(data['friend_id']))
             emit('friend_request_accepted', {'user_id': user[0], 'name': user[1]}, namespace='/chat', to=str(data['friend_id']))
+            # Send push notification to the friend
+            notifications.send_friend_accepted_notification(conn, data['friend_id'], user[1])
             return {'message': 'Friend request accepted'}, 200
         else:
             database.friend(conn, user[0], data['friend_id'], status='pending')
             emit('got_friend_request', {'user_id': user[0], 'name': user[1]}, namespace='/chat', to=str(data['friend_id']))
+            # Send push notification to the friend
+            notifications.send_friend_request_notification(conn, data['friend_id'], user[1])
             return {'message': 'Friend request sent'}, 200
 
 @app.route('/api/friends', methods=['POST'])
@@ -175,6 +183,46 @@ def api_get_user(user_id):
         'created_at': user[6]
     }
     return {'user': user_data}, 200
+
+@app.route('/api/vapid_public_key', methods=['GET'])
+def api_get_vapid_public_key():
+    """Get the VAPID public key for push subscriptions."""
+    return {'publicKey': VAPID_PUBLIC_KEY}, 200
+
+@app.route('/api/push/subscribe', methods=['POST'])
+def api_subscribe_push():
+    """Subscribe to push notifications."""
+    data = get_request_data(request)
+    if not data or 'token' not in data:
+        return {'error': 'Invalid input'}, 400
+    if 'endpoint' not in data or 'p256dh' not in data or 'auth' not in data:
+        return {'error': 'Missing subscription data'}, 400
+    
+    user = database.get_user(conn, token=data['token'])
+    if user is None:
+        return {'error': 'Invalid token'}, 401
+    
+    database.create_push_subscription(
+        conn, user[0], data['endpoint'], data['p256dh'], data['auth']
+    )
+    return {'message': 'Subscribed to push notifications'}, 200
+
+@app.route('/api/push/unsubscribe', methods=['POST'])
+def api_unsubscribe_push():
+    """Unsubscribe from push notifications."""
+    data = get_request_data(request)
+    if not data or 'token' not in data or 'endpoint' not in data:
+        return {'error': 'Invalid input'}, 400
+    
+    user = database.get_user(conn, token=data['token'])
+    if user is None:
+        return {'error': 'Invalid token'}, 401
+    
+    success = database.delete_push_subscription(conn, user[0], data['endpoint'])
+    if success:
+        return {'message': 'Unsubscribed from push notifications'}, 200
+    else:
+        return {'error': 'Subscription not found'}, 404
 
 @app.route('/api/chats', methods=['POST'])
 def api_get_chats():
@@ -316,8 +364,20 @@ def api_send_message():
     # use create_message from database module
     message_id = database.create_message(conn, user[0], chat_id, data['content'], group=is_group)
     message = database.get_message(conn, message_id)
+    
+    # Determine chat name for notifications
+    chat_name = None
+    if is_group:
+        group = database.get_group(conn, group_id=chat_id)
+        chat_name = group[1] if group else "Group"
+    
     for user_id in emit_users:
         emit('message', message, namespace='/chat', to=str(user_id))
+        # Send push notification to recipients (but not to the sender)
+        if user_id != user[0]:
+            notifications.send_message_notification(
+                conn, user_id, user[1], data['content'], chat_name
+            )
     return {'message': 'Message sent', 'message_id': message_id}, 200
 
 @app.route('/api/messages', methods=['POST'])
