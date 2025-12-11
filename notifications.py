@@ -5,9 +5,9 @@ import database
 import os
 import tempfile
 import base64
-from py_vapid import Vapid
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives.asymmetric import ec
 
 # VAPID keys should be stored securely
 VAPID_PRIVATE_KEY = None
@@ -28,42 +28,51 @@ def init_vapid_keys():
     # If not in environment, try to get from config
     if not VAPID_PRIVATE_KEY:
         VAPID_PRIVATE_KEY = config('vapid_private_key')
+        # decode if it's base64 encoded
+        if VAPID_PRIVATE_KEY and not VAPID_PRIVATE_KEY.startswith('-----BEGIN'):
+            VAPID_PRIVATE_KEY = base64.urlsafe_b64decode(VAPID_PRIVATE_KEY + '==')
     if not VAPID_PUBLIC_KEY:
         VAPID_PUBLIC_KEY = config('vapid_public_key')
+        # decode if it's base64 encoded
+        if VAPID_PUBLIC_KEY and not VAPID_PUBLIC_KEY.startswith('-----BEGIN'):
+            VAPID_PUBLIC_KEY = base64.urlsafe_b64decode(VAPID_PUBLIC_KEY + '==')
     
     # If still not found, generate new keys
     if not VAPID_PRIVATE_KEY or not VAPID_PUBLIC_KEY:
-        vapid = Vapid()
-        vapid.generate_keys()
+        private_key = ec.generate_private_key(ec.SECP256R1())
+        public_key = private_key.public_key()
         
-        # Save to temporary files
-        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.pem') as f:
-            temp_priv = f.name
-            vapid.save_key(temp_priv)
+        # Convert keys to the appropriate formats
+        def encode_key(key):
+            return base64.urlsafe_b64encode(key).rstrip(b'=').decode('utf-8')
+
+        # Serialize the public key to bytes and then to Base64
+        public_key_bytes = public_key.public_bytes(
+            encoding=serialization.Encoding.X962,
+            format=serialization.PublicFormat.UncompressedPoint
+        )
+        public_key_base64 = encode_key(public_key_bytes)
         
-        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.pem') as f:
-            temp_pub = f.name
-            vapid.save_public_key(temp_pub)
+        VAPID_PUBLIC_KEY = public_key_bytes
+
+        # Serialize the private key to bytes and then to Base64
+        private_key_bytes = private_key.private_bytes(
+            encoding=serialization.Encoding.DER,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption()
+        )
+        private_key_base64 = encode_key(private_key_bytes)
         
-        try:
-            with open(temp_priv, 'r') as pem_file:
-                VAPID_PRIVATE_KEY = pem_file.read()
-            
-            with open(temp_pub, 'r') as pem_file:
-                VAPID_PUBLIC_KEY = pem_file.read()
-            
-            # Save to config
-            config('vapid_private_key', VAPID_PRIVATE_KEY, mode='w')
-            config('vapid_public_key', VAPID_PUBLIC_KEY, mode='w')
-            print("Generated new VAPID keys and saved to config")
-        finally:
-            # Clean up temporary files
-            os.unlink(temp_priv)
-            os.unlink(temp_pub)
+        VAPID_PRIVATE_KEY = private_key_bytes
+        
+        # Save to config
+        config('vapid_private_key', private_key_base64, mode='w')
+        config('vapid_public_key', public_key_base64, mode='w')
+        print("Generated new VAPID keys and saved to config")
     
     # Load the private key using cryptography
-    private_key = serialization.load_pem_private_key(
-        VAPID_PRIVATE_KEY.encode('utf-8'),
+    private_key = serialization.load_der_private_key(
+        VAPID_PRIVATE_KEY,
         password=None,
         backend=default_backend()
     )
@@ -107,7 +116,7 @@ def send_push_notification(subscription_info, notification_data):
         webpush(
             subscription_info=subscription,
             data=json.dumps(notification_data),
-            vapid_private_key=VAPID_PRIVATE_KEY,
+            vapid_private_key=base64.urlsafe_b64encode(VAPID_PRIVATE_KEY).decode('utf-8').rstrip('='),
             vapid_claims=VAPID_CLAIMS
         )
         return True
