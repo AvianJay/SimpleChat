@@ -147,8 +147,8 @@ async function checkPushNotificationStatus() {
         return 'unsupported';
     }
     
-    try {
-        const registration = await navigator.serviceWorker.ready;
+    try {navigator.serviceWorker
+        const registration = await registerServiceWorker();
         const subscription = await registration.pushManager.getSubscription();
         
         if (subscription) {
