@@ -1,6 +1,7 @@
 // Client-side push notification handling
 
 let pushSubscription = null;
+let serviceWorkerRegistration = null;
 
 // Convert VAPID public key from base64url to Uint8Array
 function urlBase64ToUint8Array(base64String) {
@@ -25,8 +26,12 @@ async function registerServiceWorker() {
     }
     
     try {
+        if (serviceWorkerRegistration) {
+            return serviceWorkerRegistration;
+        }
         const registration = await navigator.serviceWorker.register('/static/sw.js');
         console.log('Service Worker registered:', registration);
+        serviceWorkerRegistration = registration;
         return registration;
     } catch (error) {
         console.error('Service Worker registration failed:', error);
@@ -48,7 +53,7 @@ async function subscribeToPushNotifications() {
         }
         
         // Wait for service worker to be ready
-        await navigator.serviceWorker.ready;
+        // await navigator.serviceWorker.ready;
         
         // Get VAPID public key from server
         const response = await fetch('/api/vapid_public_key');
@@ -147,7 +152,7 @@ async function checkPushNotificationStatus() {
         return 'unsupported';
     }
     
-    try {navigator.serviceWorker
+    try {
         const registration = await registerServiceWorker();
         const subscription = await registration.pushManager.getSubscription();
         
