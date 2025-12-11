@@ -214,8 +214,8 @@ def send_friend_accepted_notification(conn, recipient_id, accepter_name):
         accepter_name: Name of the user who accepted the request
     """
     notification_data = {
-        "title": "Friend Request Accepted",
-        "body": f"{accepter_name} accepted your friend request",
+        "title": "好友請求已接受",
+        "body": f"{accepter_name} 已接受你的好友請求",
         "icon": "/static/icon.png",
         "badge": "/static/badge.png",
         "tag": "friend_accepted",
