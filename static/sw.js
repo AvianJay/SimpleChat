@@ -2,6 +2,25 @@
 
 self.addEventListener('push', function(event) {
     console.log('Push received:', event);
+
+    // check if theres already a window open and focused
+    let isWindowFocused = false;
+    event.waitUntil(
+        clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
+            for (let i = 0; i < clientList.length; i++) {
+                const client = clientList[i];
+                if (client.focused) {
+                    isWindowFocused = true;
+                    break;
+                }
+            }
+        })
+    );
+
+    if (isWindowFocused) {
+        console.log('Window is focused, not showing notification');
+        return;
+    }
     
     let notificationData = {
         title: 'SimpleChat',
