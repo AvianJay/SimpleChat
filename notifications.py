@@ -168,7 +168,7 @@ def send_message_notification(conn, recipient_id, sender_name, message_content, 
     """
     title = chat_name if chat_name else sender_name
     notification_data = {
-        "title": f"New message from {title}",
+        "title": f"[SimpleChat] {title}",
         "body": message_content[:100],  # Limit to 100 chars
         "icon": "/static/icon.png",
         "badge": "/static/badge.png",
@@ -191,8 +191,8 @@ def send_friend_request_notification(conn, recipient_id, requester_name):
         requester_name: Name of the user who sent the request
     """
     notification_data = {
-        "title": "New Friend Request",
-        "body": f"{requester_name} sent you a friend request",
+        "title": "新的好友請求",
+        "body": f"{requester_name} 請求加你為好友",
         "icon": "/static/icon.png",
         "badge": "/static/badge.png",
         "tag": "friend_request",

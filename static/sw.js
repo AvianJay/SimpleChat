@@ -5,7 +5,7 @@ self.addEventListener('push', function(event) {
     
     let notificationData = {
         title: 'SimpleChat',
-        body: 'You have a new notification',
+        body: '你有一則新消息',
         icon: '/static/icon.png',
         badge: '/static/badge.png'
     };
