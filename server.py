@@ -6,6 +6,12 @@ import hashlib
 import os
 from config import config
 import notifications
+import threading
+import asyncio
+from hypercorn.asyncio import serve
+from hypercorn.config import Config
+from hypercorn.middleware import AsyncioWSGIMiddleware
+import socketio as sio_lib
 
 database.init_database(config("database_path"))
 conn = database.create_connection(config("database_path"))
@@ -26,6 +32,22 @@ def verify_user(token, admin_required=False):
         # user row: id, name, email, password, role, token, created_at
         return user[4] == 'admin'
     return True
+
+def background_send_message_notification(db_path, recipient_id, sender_name, content, chat_name):
+    """
+    Background task to send message notifications.
+    Creates a new database connection to be thread-safe.
+    """
+    # Create a new connection for this thread
+    thread_conn = database.create_connection(db_path)
+    try:
+        notifications.send_message_notification(
+            thread_conn, recipient_id, sender_name, content, chat_name
+        )
+    except Exception as e:
+        print(f"Error sending notification in background: {e}")
+    finally:
+        thread_conn.close()
 
 def get_request_data(request):
     if request.method == 'POST':
@@ -256,7 +278,7 @@ def api_add_group_member(group_id):
     if user is None:
         return {'error': 'Invalid token'}, 401
     members = database.get_group_members(conn, group_id)
-    is_member = any(m[0] == user[0] for m in members)
+    is_member = any(m['id'] == user[0] for m in members)
     if not is_member:
          return {'error': 'Not authorized'}, 403
     try:
@@ -304,8 +326,8 @@ def api_delete_group(group_id):
     
     # Check if user is owner
     members = database.get_group_members(conn, group_id)
-    # member tuple: id, name, email, role
-    is_owner = any(m[0] == user[0] and m[3] == 'owner' for m in members)
+    # member dict: id, name, email, role
+    is_owner = any(m['id'] == user[0] and m['role'] == 'owner' for m in members)
     
     if not is_owner:
         return {'error': 'Not authorized'}, 403
@@ -375,9 +397,13 @@ def api_send_message():
         emit('message', message, namespace='/chat', to=str(user_id))
         # Send push notification to recipients (but not to the sender)
         if user_id != user[0]:
-            notifications.send_message_notification(
-                conn, user_id, user[1], data['content'], chat_name
-            )
+            # Run notification sending in a background thread
+            # Pass the database path so the thread can create its own connection
+            db_path = config("database_path")
+            threading.Thread(
+                target=background_send_message_notification,
+                args=(db_path, user_id, user[1], data['content'], chat_name)
+            ).start()
     return {'message': 'Message sent', 'message_id': message_id}, 200
 
 @app.route('/api/messages', methods=['POST'])
@@ -395,7 +421,7 @@ def api_get_messages():
     if is_group:
         # Check if user is member of the group
         members = database.get_group_members(conn, chat_id)
-        if not any(m[0] == user[0] for m in members):
+        if not any(m['id'] == user[0] for m in members):
              return {'error': 'Not a member of this group'}, 403
     
     limit = int(data.get('limit', 50))
@@ -514,14 +540,38 @@ def run():
         cert = config("ssl_cert")
         key = config("ssl_key")
         if os.path.exists(cert) and os.path.exists(key):
-            context = (cert, key)
-            socketio.run(app, host=host, port=port, ssl_context=context, debug=debug)
+            # hypercorn config
+            hypercorn_config = Config()
+            hypercorn_config.bind = [f"{host}:{port}"]
+            hypercorn_config.certfile = cert
+            hypercorn_config.keyfile = key
+            hypercorn_config.debug = debug
+            
+            # Wrap Flask app with Hypercorn's WSGI Middleware
+            # Flask-SocketIO works as a WSGI middleware inside 'app' already
+            # Note: This mode might restrict SocketIO to long-polling as standard WSGI doesn't support WebSockets well
+            wsgi_app = AsyncioWSGIMiddleware(app)
+            
+            asyncio.run(serve(wsgi_app, hypercorn_config))
         else:
             print("SSL is enabled but cert or key file does not exist.")
             print("Running without SSL...")
-            socketio.run(app, host=host, port=port, debug=debug)
+            
+            hypercorn_config = Config()
+            hypercorn_config.bind = [f"{host}:{port}"]
+            hypercorn_config.debug = debug
+            
+            wsgi_app = AsyncioWSGIMiddleware(app)
+            
+            asyncio.run(serve(wsgi_app, hypercorn_config))
     else:
-        socketio.run(app, host=host, port=port, debug=debug)
+        hypercorn_config = Config()
+        hypercorn_config.bind = [f"{host}:{port}"]
+        hypercorn_config.debug = debug
+        
+        wsgi_app = AsyncioWSGIMiddleware(app)
+        
+        asyncio.run(serve(wsgi_app, hypercorn_config))
 
 # idk
 if __name__ == "__main__":

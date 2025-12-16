@@ -114,7 +114,7 @@ def test_api():
     print("STEP: Send Group Message (User 1)")
     res = requests.post(f"{BASE_URL}/api/message/send", json={
         "token": token1,
-        "recipient_id": group_id,
+        "chat_id": group_id,
         "content": "Hello Group!",
         "is_group": True
     })
@@ -131,7 +131,7 @@ def test_api():
     print(f"Get Group Messages: {res.status_code} {res.text}")
     assert res.status_code == 200
     assert len(res.json()['messages']) > 0
-    assert res.json()['messages'][0][4] == "Hello Group!" # content is at index 4
+    assert res.json()['messages'][0]['content'] == "Hello Group!" # content check
 
     # 13. Leave Group (User 2)
     print("STEP: Leave Group (User 2)")
