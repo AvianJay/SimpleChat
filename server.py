@@ -121,7 +121,13 @@ def api_friend_request():
         return {'error': 'Invalid token'}, 401
     # check if friend_id exists
     try:
-        friend_id = int(data['friend_id'])
+        if data['friend_id']:
+            friend_id = int(data['friend_id'])
+        elif data['friend_name']:
+            friend_user = database.get_user(conn, user_name=data['friend_name'])
+            if friend_user is None:
+                return {'error': 'Friend not found'}, 404
+            friend_id = friend_user[0]
     except (ValueError, TypeError):
         return {'error': 'Invalid friend_id'}, 400
     if friend_id == user[0]:
@@ -130,7 +136,7 @@ def api_friend_request():
     if friend_user is None:
         return {'error': 'Friend not found'}, 404
     # check existing friendship status
-    friend_status = database.friend_status(conn, user[0], data['friend_id'])
+    friend_status = database.friend_status(conn, user[0], friend_id)
     if friend_status == 'accepted':
         return {'error': 'Already friends'}, 400
     elif friend_status == 'pending':
@@ -139,21 +145,21 @@ def api_friend_request():
         return {'error': 'You are blocked by this user'}, 400
     else:
         # check if target user is already sent a friend request
-        if database.friend_status(conn, data['friend_id'], user[0]) == 'pending':
+        if database.friend_status(conn, friend_id, user[0]) == 'pending':
             # update the status to accepted
-            database.friend(conn, user[0], data['friend_id'], status='accepted')
+            database.friend(conn, user[0], friend_id, status='accepted')
             # database.friend(conn, data['friend_id'], user[0], status='accepted')
             emit('update_chat_list', namespace='/chat', to=str(user[0]))
-            emit('update_chat_list', namespace='/chat', to=str(data['friend_id']))
-            emit('friend_request_accepted', {'user_id': user[0], 'name': user[1]}, namespace='/chat', to=str(data['friend_id']))
+            emit('update_chat_list', namespace='/chat', to=str(friend_id))
+            emit('friend_request_accepted', {'user_id': user[0], 'name': user[1]}, namespace='/chat', to=str(friend_id))
             # Send push notification to the friend
-            notifications.send_friend_accepted_notification(conn, data['friend_id'], user[1])
+            notifications.send_friend_accepted_notification(conn, friend_id, user[1])
             return {'message': 'Friend request accepted'}, 200
         else:
-            database.friend(conn, user[0], data['friend_id'], status='pending')
-            emit('got_friend_request', {'user_id': user[0], 'name': user[1]}, namespace='/chat', to=str(data['friend_id']))
+            database.friend(conn, user[0], friend_id, status='pending')
+            emit('got_friend_request', {'user_id': user[0], 'name': user[1]}, namespace='/chat', to=str(friend_id))
             # Send push notification to the friend
-            notifications.send_friend_request_notification(conn, data['friend_id'], user[1])
+            notifications.send_friend_request_notification(conn, friend_id, user[1])
             return {'message': 'Friend request sent'}, 200
 
 @app.route('/api/friends', methods=['POST'])

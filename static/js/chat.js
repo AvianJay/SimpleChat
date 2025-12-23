@@ -99,13 +99,26 @@ class ChatApp {
 
     async sendFriendRequest() {
         const friendId = this.friendIdInput.value.trim();
-        if (!friendId) return alert('請輸入好友 ID');
+        if (!friendId) return alert('請輸入好友 ID/用戶名');
+
+        let payload;
+        if (!friendId.isdigit()) {
+            payload = {
+                token: this.token,
+                friend_name: friendId
+            }
+        } else {
+            payload = {
+                token: this.token,
+                friend_id: friendId
+            }
+        }
 
         try {
             const res = await fetch('/api/friend_request', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ token: this.token, friend_id: friendId })
+                body: JSON.stringify(payload)
             });
             const data = await res.json();
             if (res.ok) {
@@ -519,7 +532,7 @@ class ChatApp {
 document.addEventListener('DOMContentLoaded', () => {
     window.chatApp = new ChatApp();
     window.chatApp.init();
-    
+
     // Initialize push notifications
     if (window.pushNotifications) {
         window.pushNotifications.init().catch(err => {

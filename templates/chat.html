@@ -12,7 +12,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/toast.css') }}?v=1">
     <script src="{{ url_for('static', filename='js/socket.io.js') }}?v=1"></script>
     <script src="{{ url_for('static', filename='js/notifications.js') }}?v=1"></script>
-    <script src="{{ url_for('static', filename='js/chat.js') }}?v=3" defer></script>
+    <script src="{{ url_for('static', filename='js/chat.js') }}?v=4" defer></script>
     <script src="{{ url_for('static', filename='js/user.js') }}?v=1" defer></script>
 </head>
 
@@ -108,7 +108,7 @@
             <span class="close-modal">&times;</span>
             <h3>新增好友</h3>
             <div class="form-group">
-                <input type="text" id="friend-id-input" placeholder="輸入好友 ID" class="form-input">
+                <input type="text" id="friend-id-input" placeholder="輸入好友用戶名/ID" class="form-input">
             </div>
             <button id="confirm-add-friend" class="btn-primary">發送邀請</button>
         </div>
