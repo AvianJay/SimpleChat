@@ -6,9 +6,10 @@ class ChatApp {
         this.reconnectAttempts = 0;
         this.maxReconnectAttempts = 5;
         this.currentUser = null;
-        this.currentChatId = null;
+        this.currentChat = null;
         this.chats = [];
         this.cachedUsers = new Map();
+        this.currentGroupMembers = [];
     }
 
     init() {
@@ -22,24 +23,28 @@ class ChatApp {
 
         this.setupDom();
         this.fetchCurrentUser()
-            .then(user => {
+            .then((user) => {
                 if (!user) {
-                    window.location.href = '/login';
+                    this.redirectToLogin();
                     return;
                 }
                 this.currentUser = user;
-                document.getElementById('welcome-message').innerText = `歡迎, ${user.username}`;
+                document.getElementById('welcome-message').innerText = `${user.display_name} (@${user.username})`;
                 this.initSocket();
-                this.loadChats()
-                    .then(() => {
-                        // Load last visited chat from localStorage
-                        const lastChat = localStorage.getItem('last_chat');
-                        if (lastChat) {
-                            window.location.hash = `#${lastChat}`;
-                        }
-                    });
+                return this.loadChats();
             })
-            .catch(() => window.location.href = '/login');
+            .then(() => {
+                const lastChat = localStorage.getItem('last_chat');
+                if (lastChat && !window.location.hash) {
+                    window.location.hash = `#${lastChat}`;
+                } else {
+                    this.onHashChange();
+                }
+            })
+            .catch((error) => {
+                console.error(error);
+                this.redirectToLogin();
+            });
     }
 
     setupDom() {
@@ -48,159 +53,114 @@ class ChatApp {
         this.chatList = document.getElementById('chat-list');
         this.messagesDiv = document.getElementById('messages');
         this.chatNameElem = document.getElementById('chat-name');
+        this.chatMetaElem = document.getElementById('chat-meta');
         this.errorElem = document.getElementById('error-message');
         this.chatContainer = document.querySelector('.chat-container');
         this.mobileBackBtn = document.getElementById('mobile-back-btn');
+        this.loadingElem = document.getElementById('loading');
+
+        this.addFriendBtn = document.getElementById('add-friend-btn');
+        this.friendRequestsBtn = document.getElementById('friend-requests-btn');
+        this.createGroupBtn = document.getElementById('create-group-btn');
+        this.groupActionsBtn = document.getElementById('group-actions-btn');
+
+        this.addFriendModal = document.getElementById('add-friend-modal');
+        this.friendRequestsModal = document.getElementById('friend-requests-modal');
+        this.createGroupModal = document.getElementById('create-group-modal');
+        this.groupMembersModal = document.getElementById('group-members-modal');
+
+        this.friendUsernameInput = document.getElementById('friend-username-input');
+        this.friendRequestsList = document.getElementById('friend-requests-list');
+        this.groupNameInput = document.getElementById('group-name-input');
+        this.groupDescriptionInput = document.getElementById('group-description-input');
+        this.groupMemberUsernameInput = document.getElementById('group-member-username-input');
+        this.groupMembersList = document.getElementById('group-members-list');
+        this.groupManageTitle = document.getElementById('group-manage-title');
+        this.groupDeleteBtn = document.getElementById('delete-group-btn');
+        this.groupLeaveBtn = document.getElementById('leave-group-btn');
 
         this.mobileBackBtn.addEventListener('click', () => {
             window.location.hash = '';
         });
 
         this.sendButton.addEventListener('click', () => this.sendMessage());
-        this.messageInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
+        this.messageInput.addEventListener('keypress', (event) => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
                 this.sendMessage();
             }
         });
 
         window.addEventListener('hashchange', () => this.onHashChange());
 
-        // Friend Management
-        this.addFriendBtn = document.getElementById('add-friend-btn');
-        this.friendRequestsBtn = document.getElementById('friend-requests-btn');
-        this.addFriendModal = document.getElementById('add-friend-modal');
-        this.friendRequestsModal = document.getElementById('friend-requests-modal');
-        this.closeModals = document.querySelectorAll('.close-modal');
-        this.confirmAddFriendBtn = document.getElementById('confirm-add-friend');
-        this.friendIdInput = document.getElementById('friend-id-input');
-        this.friendRequestsList = document.getElementById('friend-requests-list');
-
-        this.addFriendBtn.addEventListener('click', () => this.addFriendModal.style.display = 'block');
+        this.addFriendBtn.addEventListener('click', () => this.openModal(this.addFriendModal));
         this.friendRequestsBtn.addEventListener('click', () => {
-            this.friendRequestsModal.style.display = 'block';
+            this.openModal(this.friendRequestsModal);
             this.loadFriendRequests();
         });
+        this.createGroupBtn.addEventListener('click', () => this.openModal(this.createGroupModal));
+        this.groupActionsBtn.addEventListener('click', () => this.openGroupMembersModal());
 
-        this.closeModals.forEach(btn => {
-            btn.addEventListener('click', () => {
-                this.addFriendModal.style.display = 'none';
-                this.friendRequestsModal.style.display = 'none';
-            });
+        document.getElementById('confirm-add-friend').addEventListener('click', () => this.sendFriendRequest());
+        document.getElementById('confirm-create-group').addEventListener('click', () => this.createGroup());
+        document.getElementById('confirm-add-group-member').addEventListener('click', () => this.addGroupMember());
+        this.groupDeleteBtn.addEventListener('click', () => this.deleteGroup());
+        this.groupLeaveBtn.addEventListener('click', () => this.leaveGroup());
+
+        document.querySelectorAll('.close-modal').forEach((button) => {
+            button.addEventListener('click', () => this.closeAllModals());
         });
 
-        window.addEventListener('click', (e) => {
-            if (e.target === this.addFriendModal) this.addFriendModal.style.display = 'none';
-            if (e.target === this.friendRequestsModal) this.friendRequestsModal.style.display = 'none';
+        window.addEventListener('click', (event) => {
+            [this.addFriendModal, this.friendRequestsModal, this.createGroupModal, this.groupMembersModal].forEach((modal) => {
+                if (event.target === modal) {
+                    modal.style.display = 'none';
+                }
+            });
         });
-
-        this.confirmAddFriendBtn.addEventListener('click', () => this.sendFriendRequest());
     }
 
-    async sendFriendRequest() {
-        const friendId = this.friendIdInput.value.trim();
-        if (!friendId) return alert('請輸入好友 ID/用戶名');
-
-        let payload;
-        if (!friendId.isdigit()) {
-            payload = {
-                token: this.token,
-                friend_name: friendId
-            }
-        } else {
-            payload = {
-                token: this.token,
-                friend_id: friendId
-            }
-        }
-
-        try {
-            const res = await fetch('/api/friend_request', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            const data = await res.json();
-            if (res.ok) {
-                this.showToast('好友邀請已發送', '', null, "green");
-                this.addFriendModal.style.display = 'none';
-                this.friendIdInput.value = '';
-            } else {
-                this.showToast('好友邀請失敗', data.error || '發送失敗', null, "red");
-            }
-        } catch (e) {
-            console.error(e);
-            this.showToast('好友邀請失敗', e, null, "red");
+    openModal(modal) {
+        if (modal) {
+            modal.style.display = 'block';
         }
     }
 
-    async loadFriendRequests() {
-        try {
-            const res = await fetch('/api/friend_requests', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ token: this.token })
-            });
-            const data = await res.json();
-            this.friendRequestsList.innerHTML = '';
-            if (data.requests.length === 0) {
-                this.friendRequestsList.innerHTML = '<li>尚無好友邀請</li>';
-                return;
+    closeAllModals() {
+        [this.addFriendModal, this.friendRequestsModal, this.createGroupModal, this.groupMembersModal].forEach((modal) => {
+            if (modal) {
+                modal.style.display = 'none';
             }
-            data.requests.forEach(req => {
-                const li = document.createElement('li');
-                li.innerHTML = `
-                    <span>${req.name} (ID: ${req.id})</span>
-                    <div class="request-actions">
-                        <button class="btn-accept" onclick="chatApp.acceptFriendRequest(${req.id})">接受</button>
-                    </div>
-                `;
-                this.friendRequestsList.appendChild(li);
-            });
-        } catch (e) {
-            console.error(e);
-            this.friendRequestsList.innerHTML = '<li>載入失敗</li>';
-        }
+        });
     }
 
-    async acceptFriendRequest(friendId) {
-        try {
-            const res = await fetch('/api/friend_request', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ token: this.token, friend_id: friendId })
-            });
-            const data = await res.json();
-            if (res.ok) {
-                this.showToast('已接受好友邀請', '', null, "green");
-                this.loadFriendRequests(); // Reload list
-                // this.loadChats(); // Reload chats
-            } else {
-                this.showToast('接受好友邀請失敗', data.error || '操作失敗', null, "red");
-            }
-        } catch (e) {
-            console.error(e);
-            this.showToast('接受好友邀請失敗', e, null, "red");
+    async apiFetch(url, options = {}) {
+        const response = await fetch(url, options);
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+            throw new Error(data.error || 'Request failed');
         }
+
+        return data;
     }
 
     async fetchCurrentUser() {
-        const res = await fetch('/api/user/me', {
+        const data = await this.apiFetch('/api/user/me', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ token: this.token })
         });
-        const data = await res.json();
+        this.cachedUsers.set(data.user.id, data.user);
         return data.user;
     }
 
     async fetchUser(id) {
-        const res = await fetch(`/api/user/${id}`, {
+        const data = await this.apiFetch(`/api/user/${id}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ token: this.token })
         });
-        const data = await res.json();
         this.cachedUsers.set(id, data.user);
         return data.user;
     }
@@ -209,187 +169,232 @@ class ChatApp {
         if (this.cachedUsers.has(id)) {
             return this.cachedUsers.get(id);
         }
-        return await this.fetchUser(id);
+        return this.fetchUser(id);
     }
 
     initSocket() {
-        this.socket = io("/chat");
+        this.socket = io('/chat');
         this.socket.on('connect', () => {
             this.socket.emit('authenticate', { token: this.token });
         });
 
         this.socket.on('authenticated', () => {
-            console.log('Authenticated');
+            this.reconnectAttempts = 0;
+            this.enableChatInterface(Boolean(this.currentChat));
             this.loadChats();
-            this.enableChatInterface(true);
         });
 
-        this.socket.on('unauthorized', (msg) => {
-            console.warn('Unauthorized', msg);
-            this.handleError('認證失敗，請重新登入');
-            setTimeout(() => this.redirectToLogin(), 1500);
+        this.socket.on('unauthorized', () => {
+            this.handleError('登入已失效，正在返回登入頁。');
+            setTimeout(() => this.redirectToLogin(), 1200);
         });
 
-        this.socket.on('update_chat_list', () => { this.loadChats(); });
+        this.socket.on('update_chat_list', async () => {
+            await this.loadChats();
+            if (this.currentChat?.chat_type === 'group') {
+                this.loadGroupMembers().catch((error) => console.error(error));
+            }
+        });
 
         this.socket.on('friend_request_accepted', (data) => {
-            this.showToast('好友邀請', `${data.name} 接受了你的好友邀請`, () => {
-                window.location.hash = `#user/${data.chat_id}`
-            }, "green");
+            this.showToast('好友已接受', `${data.name} 已接受你的好友邀請。`, null, 'green');
             this.loadChats();
         });
 
         this.socket.on('got_friend_request', (data) => {
-            this.showToast('好友邀請', `${data.name} 想要加你為好友`, () => {
-                this.friendRequestsModal.style.display = 'block';
+            this.showToast('新的好友邀請', `${data.name} 想加你為好友。`, () => {
+                this.openModal(this.friendRequestsModal);
                 this.loadFriendRequests();
-            }, "green");
+            }, 'green');
         });
 
         this.socket.on('disconnect', () => {
-            console.log('Socket disconnected');
             this.enableChatInterface(false);
         });
 
-        this.socket.on('connect_error', (err) => {
-            console.error('connect_error', err);
-            this.reconnectAttempts++;
+        this.socket.on('connect_error', (error) => {
+            console.error('connect_error', error);
+            this.reconnectAttempts += 1;
             if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-                this.handleError('連線失敗，請檢查您的網路');
+                this.handleError('即時連線失敗，請重新整理頁面。');
             }
         });
 
-        this.socket.on('message', (msg) => this.displayMessage(msg, true));
+        this.socket.on('message', (message) => this.displayMessage(message, true));
     }
 
     async loadChats() {
-        const res = await fetch('/api/chats', {
+        const data = await this.apiFetch('/api/chats', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ token: this.token })
         });
-        const data = await res.json();
+
         this.chats = data.chats;
         this.chatList.innerHTML = '';
-        data.chats.forEach(chat => {
+
+        data.chats.forEach((chat) => {
             const li = document.createElement('li');
-            li.textContent = chat.name;
+            li.dataset.chatType = chat.chat_type;
+            li.dataset.chatId = chat.id;
+
+            const title = document.createElement('span');
+            title.className = 'chat-list-title';
+            title.textContent = chat.name;
+
+            const badge = document.createElement('span');
+            badge.className = `chat-badge ${chat.chat_type}`;
+            badge.textContent = chat.chat_type === 'group' ? '群組' : '好友';
+
+            li.appendChild(title);
+            li.appendChild(badge);
             li.addEventListener('click', () => {
                 window.location.hash = `#${chat.chat_type}/${chat.id}`;
-                // Update active state
-                document.querySelectorAll('#chat-list li').forEach(el => el.classList.remove('active'));
-                li.classList.add('active');
             });
+
             this.chatList.appendChild(li);
         });
-        // if hash present, trigger
-        if (window.location.hash) this.onHashChange();
+
+        this.highlightActiveChat();
+        if (window.location.hash) {
+            await this.onHashChange();
+        }
+    }
+
+    highlightActiveChat() {
+        const hash = window.location.hash.replace('#', '');
+        this.chatList.querySelectorAll('li').forEach((li) => {
+            const key = `${li.dataset.chatType}/${li.dataset.chatId}`;
+            li.classList.toggle('active', key === hash);
+        });
     }
 
     async onHashChange() {
-        let chatType = window.location.hash.split('/')[0];
-        chatType = chatType.replace('#', '');
-        let chatId = window.location.hash.split('/')[1];
-        this.currentChatId = chatId;
+        const hash = window.location.hash.replace('#', '');
+        this.highlightActiveChat();
 
-        // Toggle Mobile View Class
-        if (chatId) {
-            this.chatContainer.classList.add('mobile-chat-active');
-        } else {
+        if (!hash) {
+            this.currentChat = null;
             this.chatContainer.classList.remove('mobile-chat-active');
-        }
-
-        if (!chatId) {
-            this.chatNameElem.innerText = '選擇聊天';
-            this.messagesDiv.innerHTML = '<div class="empty-state"><p>選擇一個對話開始聊天</p></div>';
+            this.chatNameElem.innerText = '選擇聊天室';
+            this.chatMetaElem.innerText = '從左側選擇一位好友或群組開始聊天。';
+            this.messagesDiv.innerHTML = '<div class="empty-state"><p>還沒有打開任何聊天室。</p></div>';
             this.enableChatInterface(false);
+            this.groupActionsBtn.hidden = true;
             return;
         }
 
-        const chat = this.chats.find(c => String(c.id) === String(chatId));
+        const [chatType, chatId] = hash.split('/');
+        const chat = this.chats.find((item) => String(item.id) === String(chatId) && item.chat_type === chatType);
+
         if (!chat) {
-            // alert('Chat not found');
             return;
         }
+
+        this.currentChat = chat;
+        this.chatContainer.classList.toggle('mobile-chat-active', Boolean(chatId));
         this.chatNameElem.innerText = chat.name;
+        this.chatMetaElem.innerText = chat.chat_type === 'group'
+            ? (chat.description || '群組聊天室')
+            : `@${chat.username || ''}`.trim();
+        this.groupActionsBtn.hidden = chat.chat_type !== 'group';
 
-        // Highlight active chat in list
-        const listItems = this.chatList.querySelectorAll('li');
-        listItems.forEach(li => {
-            if (li.textContent === chat.name) li.classList.add('active');
-            else li.classList.remove('active');
-        });
-
-        await this.loadMessages(chatType, chatId);
+        await this.loadMessages(chat.chat_type, chat.id);
         this.enableChatInterface(true);
-        // record last visited chat
-        localStorage.setItem('last_chat', `${chatType}/${chatId}`);
+        localStorage.setItem('last_chat', `${chat.chat_type}/${chat.id}`);
     }
 
     async loadMessages(chatType, chatId) {
-        const res = await fetch(`/api/messages`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token: this.token, chat_id: chatId, is_group: chatType === 'group' })
-        });
-        const data = await res.json();
-        this.messagesDiv.innerHTML = '';
-        if (data.messages.length === 0) {
-            this.messagesDiv.innerHTML = '<div class="empty-state"><p>尚無訊息</p></div>';
-        } else {
-            // sort messages by timestamp
-            data.messages.sort((a, b) => a.timestamp - b.timestamp);
-            for (const msg of data.messages) {
-                await this.displayMessage(msg, false);
+        this.loadingElem.style.display = 'block';
+        try {
+            const data = await this.apiFetch('/api/messages', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    token: this.token,
+                    chat_id: chatId,
+                    is_group: chatType === 'group'
+                })
+            });
+
+            this.messagesDiv.innerHTML = '';
+            if (!data.messages.length) {
+                this.messagesDiv.innerHTML = '<div class="empty-state"><p>還沒有訊息，傳送第一句吧。</p></div>';
+                return;
             }
+
+            data.messages
+                .sort((a, b) => a.timestamp - b.timestamp)
+                .forEach((message) => {
+                    this.displayMessage(message, false);
+                });
+        } finally {
+            this.loadingElem.style.display = 'none';
         }
     }
 
     async sendMessage() {
-        const chatType = window.location.hash.split('/')[0];
-        const chatId = window.location.hash.split('/')[1];
+        if (!this.currentChat) {
+            this.handleError('請先選擇聊天室。');
+            return;
+        }
+
         const message = this.messageInput.value.trim();
-        if (!chatId) return this.handleError('請選擇聊天對象');
-        if (!message) return this.handleError('請輸入訊息內容');
-        if (message.length > this.maxMessageLength) return this.handleError(`訊息長度過長 (上限 ${this.maxMessageLength} 字)`);
+        if (!message) {
+            this.handleError('訊息不能是空的。');
+            return;
+        }
+        if (message.length > this.maxMessageLength) {
+            this.handleError(`訊息不能超過 ${this.maxMessageLength} 個字元。`);
+            return;
+        }
 
         try {
-            const res = await fetch('/api/message/send', {
+            await this.apiFetch('/api/message/send', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ token: this.token, chat_id: chatId, content: message, is_group: chatType === 'group' })
+                body: JSON.stringify({
+                    token: this.token,
+                    chat_id: this.currentChat.id,
+                    content: message,
+                    is_group: this.currentChat.chat_type === 'group'
+                })
             });
-            if (!res.ok) throw new Error('send failed');
             this.messageInput.value = '';
             this.hideError();
-        } catch (e) {
-            this.handleError('發送失敗', e);
+        } catch (error) {
+            this.handleError(error.message, error);
         }
     }
 
-    async displayMessage(msg, notify) {
-        // Remove empty state if present
+    async displayMessage(message, notify) {
         const emptyState = this.messagesDiv.querySelector('.empty-state');
-        if (emptyState) emptyState.remove();
-
-        const isMe = this.currentUser && String(msg.author) === String(this.currentUser.id);
-        let authorName = 'Unknown';
-        let user;
-        if (isMe) {
-            authorName = '你';
-        } else {
-            user = await this.getUser(msg.author);
-            authorName = user ? user.username : `${msg.author}`;
+        if (emptyState) {
+            emptyState.remove();
         }
 
-        if (!this.currentChatId || String(msg.chat_id) !== String(this.currentChatId)) {
-            // Message does not belong to current chat
-            if (!notify) return;
-            if (isMe) return;
-            const chatLinkType = msg.is_group ? 'group' : 'user';
-            this.showToast(authorName, msg.content, () => {
-                window.location.hash = `#${chatLinkType}/${msg.chat_id}`;
-            }, "blue");
+        const isMe = this.currentUser && String(message.author) === String(this.currentUser.id);
+        let authorName = this.currentUser?.display_name || '我';
+
+        if (!isMe) {
+            try {
+                const user = await this.getUser(message.author);
+                authorName = user ? user.display_name : `${message.author}`;
+            } catch (error) {
+                console.error(error);
+                authorName = `${message.author}`;
+            }
+        }
+
+        const currentChatId = this.currentChat ? String(this.currentChat.id) : null;
+        if (!currentChatId || String(message.chat_id) !== currentChatId) {
+            if (!notify || isMe) {
+                return;
+            }
+            const chatLinkType = message.is_group ? 'group' : 'user';
+            this.showToast(authorName, message.content, () => {
+                window.location.hash = `#${chatLinkType}/${message.chat_id}`;
+            }, 'blue');
             return;
         }
 
@@ -398,43 +403,275 @@ class ChatApp {
 
         const author = document.createElement('span');
         author.className = 'message-author';
-        author.textContent = authorName;
+        author.textContent = isMe ? '我' : authorName;
 
         const content = document.createElement('div');
         content.className = 'message-content';
-        content.textContent = msg.content;
+        content.textContent = message.content;
+
+        const time = document.createElement('span');
+        time.className = 'message-time';
+        time.textContent = this.formatMessageTime(message.timestamp);
 
         el.appendChild(author);
         el.appendChild(content);
-
-        if (msg.timestamp) {
-            const t = new Date(msg.timestamp * 1000);
-            const ct = new Date();
-            let timetext;
-            if (t.toDateString() === ct.toDateString()) {
-                timetext = t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            } else {
-                timetext = `${t.toLocaleDateString()} ${t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-            }
-            const time = document.createElement('span');
-            time.className = 'message-time';
-            time.style.fontSize = '10px';
-            time.style.opacity = '0.7';
-            time.style.display = 'block';
-            time.style.textAlign = 'right';
-            time.style.marginTop = '4px';
-            time.textContent = timetext;
-            el.appendChild(time);
-        }
+        el.appendChild(time);
 
         this.messagesDiv.appendChild(el);
         this.messagesDiv.scrollTop = this.messagesDiv.scrollHeight;
     }
 
+    formatMessageTime(timestamp) {
+        if (!timestamp) {
+            return '';
+        }
+        const date = new Date(timestamp * 1000);
+        const now = new Date();
+        if (date.toDateString() === now.toDateString()) {
+            return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+        return `${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    }
+
+    async sendFriendRequest() {
+        const value = this.friendUsernameInput.value.trim();
+        if (!value) {
+            this.handleError('請輸入好友的 username。');
+            return;
+        }
+
+        const payload = /^\d+$/.test(value)
+            ? { token: this.token, friend_id: value }
+            : { token: this.token, friend_username: value };
+
+        try {
+            const data = await this.apiFetch('/api/friend_request', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            this.showToast('好友邀請', data.message, null, 'green');
+            this.friendUsernameInput.value = '';
+            this.closeAllModals();
+        } catch (error) {
+            this.handleError(error.message, error);
+        }
+    }
+
+    async loadFriendRequests() {
+        try {
+            const data = await this.apiFetch('/api/friend_requests', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token: this.token })
+            });
+            this.friendRequestsList.innerHTML = '';
+
+            if (!data.requests.length) {
+                this.friendRequestsList.innerHTML = '<li class="simple-list-empty">目前沒有待處理的好友邀請。</li>';
+                return;
+            }
+
+            data.requests.forEach((request) => {
+                const li = document.createElement('li');
+                li.innerHTML = `
+                    <div>
+                        <strong>${request.display_name}</strong>
+                        <div class="list-subtext">@${request.username}</div>
+                    </div>
+                    <div class="request-actions">
+                        <button class="btn-accept" data-user-id="${request.id}">接受</button>
+                    </div>
+                `;
+                li.querySelector('button').addEventListener('click', () => this.acceptFriendRequest(request.id));
+                this.friendRequestsList.appendChild(li);
+            });
+        } catch (error) {
+            console.error(error);
+            this.friendRequestsList.innerHTML = '<li class="simple-list-empty">載入好友邀請失敗。</li>';
+        }
+    }
+
+    async acceptFriendRequest(friendId) {
+        try {
+            const data = await this.apiFetch('/api/friend_request', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token: this.token, friend_id: friendId })
+            });
+            this.showToast('好友邀請', data.message, null, 'green');
+            await this.loadFriendRequests();
+            await this.loadChats();
+        } catch (error) {
+            this.handleError(error.message, error);
+        }
+    }
+
+    async createGroup() {
+        const name = this.groupNameInput.value.trim();
+        const description = this.groupDescriptionInput.value.trim();
+
+        if (!name) {
+            this.handleError('請輸入群組名稱。');
+            return;
+        }
+
+        try {
+            const data = await this.apiFetch('/api/groups', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    token: this.token,
+                    name,
+                    description
+                })
+            });
+
+            this.groupNameInput.value = '';
+            this.groupDescriptionInput.value = '';
+            this.closeAllModals();
+            await this.loadChats();
+            window.location.hash = `#group/${data.group_id}`;
+            this.showToast('群組建立成功', `已建立群組「${name}」`, null, 'green');
+        } catch (error) {
+            this.handleError(error.message, error);
+        }
+    }
+
+    async openGroupMembersModal() {
+        if (!this.currentChat || this.currentChat.chat_type !== 'group') {
+            return;
+        }
+        this.groupManageTitle.textContent = `管理群組：${this.currentChat.name}`;
+        this.openModal(this.groupMembersModal);
+        await this.loadGroupMembers();
+    }
+
+    async loadGroupMembers() {
+        if (!this.currentChat || this.currentChat.chat_type !== 'group') {
+            return;
+        }
+
+        const data = await this.apiFetch(`/api/groups/${this.currentChat.id}/members?token=${encodeURIComponent(this.token)}`);
+        this.currentGroupMembers = data.members;
+
+        const myMember = this.currentGroupMembers.find((member) => String(member.id) === String(this.currentUser.id));
+        const isOwner = myMember?.role === 'owner';
+
+        this.groupDeleteBtn.hidden = !isOwner;
+        this.groupMembersList.innerHTML = '';
+
+        this.currentGroupMembers.forEach((member) => {
+            const li = document.createElement('li');
+
+            const info = document.createElement('div');
+            info.innerHTML = `
+                <strong>${member.name}</strong>
+                <div class="list-subtext">@${member.username} · ${member.role}</div>
+            `;
+
+            li.appendChild(info);
+
+            if (isOwner && String(member.id) !== String(this.currentUser.id)) {
+                const removeButton = document.createElement('button');
+                removeButton.className = 'btn-danger-inline';
+                removeButton.textContent = '移除';
+                removeButton.addEventListener('click', () => this.removeGroupMember(member.id));
+                li.appendChild(removeButton);
+            }
+
+            this.groupMembersList.appendChild(li);
+        });
+    }
+
+    async addGroupMember() {
+        if (!this.currentChat || this.currentChat.chat_type !== 'group') {
+            return;
+        }
+
+        const username = this.groupMemberUsernameInput.value.trim();
+        if (!username) {
+            this.handleError('請輸入要加入群組的 username。');
+            return;
+        }
+
+        try {
+            const data = await this.apiFetch(`/api/groups/${this.currentChat.id}/members`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    token: this.token,
+                    username
+                })
+            });
+            this.groupMemberUsernameInput.value = '';
+            await this.loadGroupMembers();
+            await this.loadChats();
+            this.showToast('群組成員', data.message, null, 'green');
+        } catch (error) {
+            this.handleError(error.message, error);
+        }
+    }
+
+    async removeGroupMember(userId) {
+        if (!this.currentChat || this.currentChat.chat_type !== 'group') {
+            return;
+        }
+
+        try {
+            const data = await this.apiFetch(`/api/groups/${this.currentChat.id}/members/${userId}?token=${encodeURIComponent(this.token)}`, {
+                method: 'DELETE'
+            });
+            await this.loadGroupMembers();
+            await this.loadChats();
+            this.showToast('群組成員', data.message, null, 'green');
+        } catch (error) {
+            this.handleError(error.message, error);
+        }
+    }
+
+    async leaveGroup() {
+        if (!this.currentChat || this.currentChat.chat_type !== 'group') {
+            return;
+        }
+
+        try {
+            const data = await this.apiFetch(`/api/groups/${this.currentChat.id}/leave`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token: this.token })
+            });
+            this.closeAllModals();
+            window.location.hash = '';
+            await this.loadChats();
+            this.showToast('群組', data.message, null, 'green');
+        } catch (error) {
+            this.handleError(error.message, error);
+        }
+    }
+
+    async deleteGroup() {
+        if (!this.currentChat || this.currentChat.chat_type !== 'group') {
+            return;
+        }
+
+        try {
+            const data = await this.apiFetch(`/api/groups/${this.currentChat.id}?token=${encodeURIComponent(this.token)}`, {
+                method: 'DELETE'
+            });
+            this.closeAllModals();
+            window.location.hash = '';
+            await this.loadChats();
+            this.showToast('群組', data.message, null, 'green');
+        } catch (error) {
+            this.handleError(error.message, error);
+        }
+    }
+
     enableChatInterface(enabled) {
         this.sendButton.disabled = !enabled;
         this.messageInput.disabled = !enabled;
-        this.messageInput.placeholder = enabled ? '輸入訊息...' : '連線中斷...';
+        this.messageInput.placeholder = enabled ? '輸入訊息...' : '請先選擇聊天室...';
     }
 
     handleError(message, err = null) {
@@ -457,12 +694,12 @@ class ChatApp {
 
     showToast(title, message, onClick = null, color = null) {
         const container = document.getElementById('toast-container');
-        if (!container) return;
+        if (!container) {
+            return;
+        }
 
         const toast = document.createElement('div');
         toast.className = 'toast';
-
-        // Apply color if provided
         if (color) {
             toast.style.borderLeftColor = color;
         }
@@ -473,7 +710,6 @@ class ChatApp {
         const titleEl = document.createElement('div');
         titleEl.className = 'toast-title';
         titleEl.textContent = title;
-
         header.appendChild(titleEl);
 
         const msgEl = document.createElement('div');
@@ -485,35 +721,16 @@ class ChatApp {
 
         const progressBar = document.createElement('div');
         progressBar.className = 'toast-progress-bar';
-        if (color) {
-            progressBar.style.backgroundColor = color;
-        } else {
-            progressBar.style.backgroundColor = 'var(--primary)';
-        }
-
+        progressBar.style.backgroundColor = color || 'var(--primary)';
         progressContainer.appendChild(progressBar);
 
         toast.appendChild(header);
         toast.appendChild(msgEl);
         toast.appendChild(progressContainer);
 
-        // Click Event
-        toast.addEventListener('click', () => {
-            if (onClick) onClick();
-            removeToast();
-        });
-
-        // Add to container
-        container.appendChild(toast);
-
-        // Auto remove after 5 seconds
-        const timer = setTimeout(() => {
-            removeToast();
-        }, 5000);
-
-        function removeToast() {
+        const removeToast = () => {
             clearTimeout(timer);
-            toast.style.animation = 'none'; // Clear entry animation
+            toast.style.animation = 'none';
             toast.style.opacity = '0';
             toast.style.transition = 'opacity 0.3s';
             setTimeout(() => {
@@ -521,7 +738,20 @@ class ChatApp {
                     toast.remove();
                 }
             }, 300);
-        }
+        };
+
+        toast.addEventListener('click', () => {
+            if (onClick) {
+                onClick();
+            }
+            removeToast();
+        });
+
+        container.appendChild(toast);
+
+        const timer = setTimeout(() => {
+            removeToast();
+        }, 5000);
     }
 
     updateAppHeight() {
@@ -533,10 +763,9 @@ document.addEventListener('DOMContentLoaded', () => {
     window.chatApp = new ChatApp();
     window.chatApp.init();
 
-    // Initialize push notifications
     if (window.pushNotifications) {
-        window.pushNotifications.init().catch(err => {
-            console.error('Failed to initialize push notifications:', err);
+        window.pushNotifications.init().catch((error) => {
+            console.error('Failed to initialize push notifications:', error);
         });
     }
 });

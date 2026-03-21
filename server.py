@@ -4,6 +4,7 @@ from flask import session
 import database
 import hashlib
 import os
+import re
 from config import config
 import notifications
 import threading
@@ -21,6 +22,8 @@ app.secret_key = os.environ.get('SECRET_KEY') or os.urandom(24)
 # manage_session=True lets Flask-SocketIO use Flask's session inside events
 socketio = SocketIO(app, manage_session=True)
 
+USERNAME_PATTERN = re.compile(r'^[a-z0-9._-]{3,20}$')
+
 # Initialize VAPID keys for push notifications
 VAPID_PUBLIC_KEY = notifications.init_vapid_keys()
 
@@ -32,6 +35,34 @@ def verify_user(token, admin_required=False):
         # user row: id, name, email, password, role, token, created_at
         return user[4] == 'admin'
     return True
+
+
+def normalize_username(value):
+    return (value or '').strip().lower()
+
+
+def normalize_display_name(value, fallback):
+    display_name = (value or '').strip()
+    return display_name[:50] if display_name else fallback
+
+
+def get_user_display_name(user):
+    return user[7] if len(user) > 7 and user[7] else user[1]
+
+
+def build_user_payload(user):
+    return {
+        'id': user[0],
+        'username': user[1],
+        'display_name': get_user_display_name(user),
+        'email': user[2],
+        'role': user[4],
+        'created_at': user[6]
+    }
+
+
+def get_group_member_ids(group_id):
+    return [member['id'] for member in database.get_group_members(conn, group_id)]
 
 def background_send_message_notification(db_path, recipient_id, sender_name, content, chat_name):
     """
@@ -65,15 +96,17 @@ def api_register():
     data = get_request_data(request)
     if not data or 'username' not in data or 'email' not in data or 'password' not in data:
         return {'error': 'Invalid input'}, 400
-    if len(data['username']) < 3 or len(data['username']) > 20:
-        return {'error': 'Username must be between 3 and 20 characters'}, 400
+    username = normalize_username(data['username'])
+    if not USERNAME_PATTERN.fullmatch(username):
+        return {'error': 'Username must be 3-20 characters and only use lowercase letters, numbers, ., _, -'}, 400
     if len(data['password']) < 8:
         return {'error': 'Password must be at least 8 characters'}, 400
     if database.get_user(conn, email=data['email']) is not None:
         return {'error': 'Email already registered'}, 400
-    if database.get_user(conn, user_name=data['username']) is not None:
+    if database.get_user(conn, user_name=username) is not None:
         return {'error': 'Username already taken'}, 400
-    user_id = database.create_user(conn, data['username'], data['email'], data['password'])
+    display_name = normalize_display_name(data.get('display_name'), username)
+    user_id = database.create_user_with_profile(conn, username, data['email'], data['password'], display_name=display_name)
     return {'message': 'User registered', 'user_id': user_id}, 201
 
 @app.route('/login')
@@ -85,7 +118,7 @@ def api_login():
     data = get_request_data(request)
     if not data or 'username' not in data or 'password' not in data:
         return {'error': 'Invalid input'}, 400
-    user = database.get_user(conn, user_name=data['username'])
+    user = database.get_user(conn, user_name=normalize_username(data['username']))
     if user is None:
         return {'error': 'User not found'}, 404
     hashed_password = hashlib.sha256(data['password'].encode()).hexdigest()
@@ -114,20 +147,23 @@ def api_reset_password():
 @app.route('/api/friend_request', methods=['POST'])
 def api_friend_request():
     data = get_request_data(request)
-    if not data or 'token' not in data or 'friend_id' not in data:
+    if not data or 'token' not in data:
         return {'error': 'Invalid input'}, 400
     user = database.get_user(conn, token=data['token'])
     if user is None:
         return {'error': 'Invalid token'}, 401
+    friend_id = None
     # check if friend_id exists
     try:
-        if data['friend_id']:
+        if data.get('friend_id') not in (None, ''):
             friend_id = int(data['friend_id'])
-        elif data['friend_name']:
-            friend_user = database.get_user(conn, user_name=data['friend_name'])
+        elif data.get('friend_username'):
+            friend_user = database.get_user(conn, user_name=normalize_username(data['friend_username']))
             if friend_user is None:
                 return {'error': 'Friend not found'}, 404
             friend_id = friend_user[0]
+        else:
+            return {'error': 'friend_id or friend_username is required'}, 400
     except (ValueError, TypeError):
         return {'error': 'Invalid friend_id'}, 400
     if friend_id == user[0]:
@@ -148,18 +184,17 @@ def api_friend_request():
         if database.friend_status(conn, friend_id, user[0]) == 'pending':
             # update the status to accepted
             database.friend(conn, user[0], friend_id, status='accepted')
-            # database.friend(conn, data['friend_id'], user[0], status='accepted')
             emit('update_chat_list', namespace='/chat', to=str(user[0]))
             emit('update_chat_list', namespace='/chat', to=str(friend_id))
-            emit('friend_request_accepted', {'user_id': user[0], 'name': user[1]}, namespace='/chat', to=str(friend_id))
+            emit('friend_request_accepted', {'user_id': user[0], 'name': get_user_display_name(user)}, namespace='/chat', to=str(friend_id))
             # Send push notification to the friend
-            notifications.send_friend_accepted_notification(conn, friend_id, user[1])
+            notifications.send_friend_accepted_notification(conn, friend_id, get_user_display_name(user))
             return {'message': 'Friend request accepted'}, 200
         else:
             database.friend(conn, user[0], friend_id, status='pending')
-            emit('got_friend_request', {'user_id': user[0], 'name': user[1]}, namespace='/chat', to=str(friend_id))
+            emit('got_friend_request', {'user_id': user[0], 'name': get_user_display_name(user)}, namespace='/chat', to=str(friend_id))
             # Send push notification to the friend
-            notifications.send_friend_request_notification(conn, friend_id, user[1])
+            notifications.send_friend_request_notification(conn, friend_id, get_user_display_name(user))
             return {'message': 'Friend request sent'}, 200
 
 @app.route('/api/friends', methods=['POST'])
@@ -171,7 +206,13 @@ def api_get_friends():
     if user is None:
         return {'error': 'Invalid token'}, 401
     friends = database.get_friends(conn, user[0])
-    friends_list = [{'id': f[0], 'name': f[1], 'email': f[2], 'status': f[3]} for f in friends]
+    friends_list = [{
+        'id': f[0],
+        'username': f[1],
+        'display_name': f[4] or f[1],
+        'email': f[2],
+        'status': f[3]
+    } for f in friends]
     return {'friends': friends_list}, 200
 
 @app.route('/api/friend_requests', methods=['POST'])
@@ -183,7 +224,12 @@ def api_get_friend_requests():
     if user is None:
         return {'error': 'Invalid token'}, 401
     requests = database.get_pending_requests(conn, user[0])
-    requests_list = [{'id': r[0], 'name': r[1], 'email': r[2]} for r in requests]
+    requests_list = [{
+        'id': r[0],
+        'username': r[1],
+        'display_name': r[3] or r[1],
+        'email': r[2]
+    } for r in requests]
     return {'requests': requests_list}, 200
 
 @app.route('/api/user/<user_id>', methods=['POST'])
@@ -203,14 +249,7 @@ def api_get_user(user_id):
         # check if user is friend of me
         if user[0] not in [f[0] for f in database.get_friends(conn, me[0])]:
             return {'error': 'Not friends'}, 403
-    user_data = {
-        'id': user[0],
-        'username': user[1],
-        'email': user[2],
-        'role': user[4],
-        'created_at': user[6]
-    }
-    return {'user': user_data}, 200
+    return {'user': build_user_payload(user)}, 200
 
 @app.route('/api/vapid_public_key', methods=['GET'])
 def api_get_vapid_public_key():
@@ -273,12 +312,13 @@ def api_create_group():
         return {'error': 'Invalid token'}, 401
     group_id = database.create_group(conn, data['name'], data.get('description'))
     database.add_group_member(conn, group_id, user[0], role='owner')
+    emit('update_chat_list', namespace='/chat', to=str(user[0]))
     return {'message': 'Group created', 'group_id': group_id}, 201
 
 @app.route('/api/groups/<group_id>/members', methods=['POST'])
 def api_add_group_member(group_id):
     data = get_request_data(request)
-    if not data or 'token' not in data or 'user_id' not in data:
+    if not data or 'token' not in data:
         return {'error': 'Invalid input'}, 400
     user = database.get_user(conn, token=data['token'])
     if user is None:
@@ -287,12 +327,38 @@ def api_add_group_member(group_id):
     is_member = any(m['id'] == user[0] for m in members)
     if not is_member:
          return {'error': 'Not authorized'}, 403
+    new_member_id = None
     try:
-        new_member_id = int(data['user_id'])
-    except ValueError:
+        if data.get('user_id') not in (None, ''):
+            new_member_id = int(data['user_id'])
+        elif data.get('username'):
+            target_user = database.get_user(conn, user_name=normalize_username(data['username']))
+            if target_user is None:
+                return {'error': 'User not found'}, 404
+            new_member_id = target_user[0]
+        else:
+            return {'error': 'user_id or username is required'}, 400
+    except (TypeError, ValueError):
         return {'error': 'Invalid user_id'}, 400
+    if any(m['id'] == new_member_id for m in members):
+        return {'error': 'User is already in the group'}, 400
     database.add_group_member(conn, group_id, new_member_id)
+    for member_id in get_group_member_ids(group_id):
+        emit('update_chat_list', namespace='/chat', to=str(member_id))
     return {'message': 'Member added'}, 200
+
+@app.route('/api/groups/<group_id>/members', methods=['GET'])
+def api_get_group_members(group_id):
+    token = request.args.get('token')
+    if not token:
+        return {'error': 'Invalid input'}, 400
+    user = database.get_user(conn, token=token)
+    if user is None:
+        return {'error': 'Invalid token'}, 401
+    members = database.get_group_members(conn, group_id)
+    if not any(member['id'] == user[0] for member in members):
+        return {'error': 'Not authorized'}, 403
+    return {'members': members}, 200
 
 @app.route('/api/groups/<group_id>/members/<user_id>', methods=['DELETE'])
 def api_remove_group_member(group_id, user_id):
@@ -302,11 +368,19 @@ def api_remove_group_member(group_id, user_id):
     user = database.get_user(conn, token=token)
     if user is None:
         return {'error': 'Invalid token'}, 401
+    members = database.get_group_members(conn, group_id)
+    caller = next((member for member in members if member['id'] == user[0]), None)
+    if caller is None:
+        return {'error': 'Not authorized'}, 403
     try:
         target_user_id = int(user_id)
     except ValueError:
         return {'error': 'Invalid user_id'}, 400
+    if user[0] != target_user_id and caller['role'] != 'owner':
+        return {'error': 'Not authorized'}, 403
     database.remove_group_member(conn, group_id, target_user_id)
+    for member_id in set(get_group_member_ids(group_id) + [target_user_id]):
+        emit('update_chat_list', namespace='/chat', to=str(member_id))
     return {'message': 'Member removed'}, 200
 
 @app.route('/api/groups/<group_id>/leave', methods=['POST'])
@@ -317,8 +391,12 @@ def api_leave_group(group_id):
     user = database.get_user(conn, token=data['token'])
     if user is None:
         return {'error': 'Invalid token'}, 401
-    
+    members = database.get_group_members(conn, group_id)
+    if not any(member['id'] == user[0] for member in members):
+        return {'error': 'Not authorized'}, 403
     database.remove_group_member(conn, group_id, user[0])
+    for member_id in set(get_group_member_ids(group_id) + [user[0]]):
+        emit('update_chat_list', namespace='/chat', to=str(member_id))
     return {'message': 'Left group'}, 200
 
 @app.route('/api/groups/<group_id>', methods=['DELETE'])
@@ -337,8 +415,10 @@ def api_delete_group(group_id):
     
     if not is_owner:
         return {'error': 'Not authorized'}, 403
-        
+    member_ids = [member['id'] for member in members]
     database.delete_group(conn, group_id)
+    for member_id in member_ids:
+        emit('update_chat_list', namespace='/chat', to=str(member_id))
     return {'message': 'Group deleted'}, 200
 
 @app.route('/api/friends/<friend_id>', methods=['DELETE'])
@@ -382,10 +462,10 @@ def api_send_message():
              return {'error': 'Not a member of this group'}, 403
     else:
         dm_chat = database.get_user_dm(conn, user_id=user[0], dm_id=chat_id)
-        emit_users.append(dm_chat['target_id'])
-        emit_users.append(user[0])
         if dm_chat is None:
             return {'error': 'Recipient not found'}, 404
+        emit_users.append(dm_chat['target_id'])
+        emit_users.append(user[0])
         if dm_chat['user_id'] != user[0]:
             return {'error': 'Not authorized'}, 403
 
@@ -408,7 +488,7 @@ def api_send_message():
             db_path = config("database_path")
             threading.Thread(
                 target=background_send_message_notification,
-                args=(db_path, user_id, user[1], data['content'], chat_name)
+                args=(db_path, user_id, get_user_display_name(user), data['content'], chat_name)
             ).start()
     return {'message': 'Message sent', 'message_id': message_id}, 200
 
@@ -446,7 +526,7 @@ def api_message_operations(message_id):
         msg = database.get_message(conn, message_id)
         if not msg:
             return {'error': 'Message not found'}, 404
-        if msg[1] != user[0]:
+        if msg['author'] != user[0]:
             return {'error': 'Not authorized'}, 403
         database.update_message(conn, message_id, data['content'])
         return {'message': 'Message updated'}, 200
@@ -460,7 +540,7 @@ def api_message_operations(message_id):
         msg = database.get_message(conn, message_id)
         if not msg:
             return {'error': 'Message not found'}, 404
-        if msg[1] != user[0]:
+        if msg['author'] != user[0]:
             return {'error': 'Not authorized'}, 403
         database.delete_message(conn, message_id)
         return {'message': 'Message deleted'}, 200
@@ -487,6 +567,7 @@ def handle_authenticate(data):
     # If token is valid, store user information in session
     session['user_id'] = user[0]
     session['username'] = user[1]
+    session['display_name'] = get_user_display_name(user)
     try:
         join_room(str(user[0]))  # Join a room named after the user ID
     except Exception as e:

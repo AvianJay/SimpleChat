@@ -19,6 +19,12 @@
     margin-bottom: 16px;
 }
 
+.form-hint {
+    margin: -8px 0 16px;
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
 .form-input {
     width: 100%;
     padding: 12px;

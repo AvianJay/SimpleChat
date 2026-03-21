@@ -14,6 +14,7 @@ def test_api():
     
     res = requests.post(f"{BASE_URL}/api/register", json={
         "username": username1,
+        "display_name": "User One",
         "email": email1,
         "password": password
     })
@@ -44,6 +45,7 @@ def test_api():
     
     res = requests.post(f"{BASE_URL}/api/register", json={
         "username": username2,
+        "display_name": "User Two",
         "email": email2,
         "password": password
     })
@@ -68,7 +70,7 @@ def test_api():
     
     res = requests.post(f"{BASE_URL}/api/friend_request", json={
         "token": token1,
-        "friend_id": user2_id
+        "friend_username": username2
     })
     print(f"Friend Request: {res.status_code} {res.text}")
     assert res.status_code == 200
@@ -105,7 +107,7 @@ def test_api():
     print("STEP: Add User 2 to Group")
     res = requests.post(f"{BASE_URL}/api/groups/{group_id}/members", json={
         "token": token1,
-        "user_id": user2_id
+        "username": username2
     })
     print(f"Add User 2 to Group: {res.status_code} {res.text}")
     assert res.status_code == 200

@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
-    <script src="{{ url_for('static', filename='js/user.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/user.js') }}?v=2" defer></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/auth.css') }}">
     <script>
         document.addEventListener('DOMContentLoaded', function () {
@@ -20,9 +20,11 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ token: token })
                 })
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.user) window.location.href = '/chat';
+                    .then((response) => response.json())
+                    .then((data) => {
+                        if (data.user) {
+                            window.location.href = '/chat';
+                        }
                     });
             }
         });
@@ -35,7 +37,7 @@
         <h2 class="auth-title">登入</h2>
         <form id="login_form" onsubmit="event.preventDefault(); login();">
             <div class="form-group">
-                <input type="text" id="username" name="username" class="form-input" placeholder="帳號" required>
+                <input type="text" id="username" name="username" class="form-input" placeholder="username" required>
             </div>
             <div class="form-group">
                 <input type="password" id="password" name="password" class="form-input" placeholder="密碼" required>
@@ -43,7 +45,7 @@
             <button id="login-button" class="auth-button">登入</button>
         </form>
         <div class="auth-footer">
-            <p>還沒有帳號嗎？ <a href="/register">立即註冊</a></p>
+            <p>還沒有帳號？ <a href="/register">立即註冊</a></p>
         </div>
     </div>
 </body>

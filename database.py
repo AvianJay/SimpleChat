@@ -4,6 +4,11 @@ import random
 import hashlib
 from datetime import datetime
 
+
+def _column_exists(cursor, table_name, column_name):
+    cursor.execute(f"PRAGMA table_info({table_name})")
+    return any(row[1] == column_name for row in cursor.fetchall())
+
 def init_database(db_name='app.db'):
     """Initialize the SQLite database with a sample table."""
     conn = sqlite3.connect(db_name)
@@ -19,6 +24,20 @@ def init_database(db_name='app.db'):
             token TEXT UNIQUE,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
+    ''')
+
+    if not _column_exists(cursor, 'users', 'display_name'):
+        cursor.execute('ALTER TABLE users ADD COLUMN display_name TEXT')
+
+    cursor.execute('''
+        UPDATE users
+        SET display_name = name
+        WHERE display_name IS NULL OR TRIM(display_name) = ''
+    ''')
+
+    cursor.execute('''
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_users_name_unique
+        ON users(name)
     ''')
 
     cursor.execute('''
@@ -105,14 +124,19 @@ def create_connection(db_name='app.db'):
 
 def create_user(conn, name, email, password, token=None):
     """Create a new user in the users table."""
+    return create_user_with_profile(conn, name, email, password, display_name=name, token=token)
+
+def create_user_with_profile(conn, username, email, password, display_name=None, token=None):
+    """Create a new user with a distinct display name."""
     if token is None:
         token = ''.join(random.choices(string.ascii_letters + string.digits, k=32))
     password = hashlib.sha256(password.encode()).hexdigest()
+    display_name = (display_name or username).strip()
     cursor = conn.cursor()
     cursor.execute('''
-        INSERT INTO users (name, email, password, token)
-        VALUES (?, ?, ?, ?)
-    ''', (name, email, password, token))
+        INSERT INTO users (name, email, password, token, display_name)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (username, email, password, token, display_name))
     conn.commit()
     return cursor.lastrowid
 
@@ -138,6 +162,7 @@ def create_group(conn, name, description=None):
         INSERT INTO groups (name, description)
         VALUES (?, ?)
     ''', (name, description))
+    conn.commit()
     return cursor.lastrowid
 
 def get_group(conn, group_id=None, user_id=None):
@@ -217,7 +242,7 @@ def get_friends(conn, user_id):
     """Retrieve a list of friends for a user."""
     cursor = conn.cursor()
     cursor.execute('''
-        SELECT u.id, u.name, u.email, f.status
+        SELECT u.id, u.name, u.email, f.status, u.display_name
         FROM users u
         JOIN friendships f ON u.id = f.friend_id
         WHERE f.user_id = ? AND f.status = 'accepted'
@@ -228,7 +253,7 @@ def get_pending_requests(conn, user_id):
     """Retrieve a list of pending friend requests for a user."""
     cursor = conn.cursor()
     cursor.execute('''
-        SELECT u.id, u.name, u.email
+        SELECT u.id, u.name, u.email, u.display_name
         FROM users u
         JOIN friendships f ON u.id = f.user_id
         WHERE f.friend_id = ? AND f.status = 'pending'
@@ -248,7 +273,8 @@ def get_chats(conn, user_id):
             u.name,
             u.email,
             udm.dm_id,
-            'user' AS chat_type
+            'user' AS chat_type,
+            u.display_name
         FROM user_dms udm
         JOIN users u ON u.id = CASE
                                     WHEN udm.user_id = ? THEN udm.target_id
@@ -260,7 +286,8 @@ def get_chats(conn, user_id):
     user_chats = cursor.fetchall()
     user_chats = [{
         'id': chat[3],
-        'name': chat[1],
+        'name': chat[4] or chat[1],
+        'username': chat[1],
         'email': chat[2],
         'user_id': chat[0],
         'chat_type': 'user'
@@ -290,6 +317,7 @@ def add_group_member(conn, group_id, user_id, role='member'):
     cursor.execute('''
         INSERT INTO group_members (group_id, user_id, role)
         VALUES (?, ?, ?)
+        ON CONFLICT(group_id, user_id) DO NOTHING
     ''', (group_id, user_id, role))
     conn.commit()
 
@@ -306,7 +334,7 @@ def get_group_members(conn, group_id):
     """Get all members of a group."""
     cursor = conn.cursor()
     cursor.execute('''
-        SELECT u.id, u.name, u.email, gm.role
+        SELECT u.id, u.name, u.email, gm.role, u.display_name
         FROM users u
         JOIN group_members gm ON u.id = gm.user_id
         WHERE gm.group_id = ?
@@ -315,7 +343,8 @@ def get_group_members(conn, group_id):
     group_members = cursor.fetchall()
     group_members = [{
         'id': member[0],
-        'name': member[1],
+        'name': member[4] or member[1],
+        'username': member[1],
         'email': member[2],
         'role': member[3]
     } for member in group_members]
@@ -356,6 +385,8 @@ def get_message(conn, message_id):
         SELECT * FROM messages WHERE id = ?
     ''', (message_id,))
     message = cursor.fetchone()
+    if message is None:
+        return None
     # convert message to dictionary
     message = {
         'id': message[0],
@@ -397,6 +428,8 @@ def get_user_dm(conn, user_id=None, target_id=None, dm_id=None):
             SELECT * FROM user_dms WHERE user_id = ? AND target_id = ?
         ''', (user_id, target_id))
     user_dm = cursor.fetchone()
+    if user_dm is None:
+        return None
     # convert user_dm to dictionary
     user_dm = {
         'id': user_dm[3],
