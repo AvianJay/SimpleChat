@@ -5,10 +5,13 @@ import database
 import hashlib
 import os
 import re
+import time
 from config import config
 import notifications
 import threading
 import asyncio
+from collections import defaultdict, deque
+from functools import wraps
 from hypercorn.asyncio import serve
 from hypercorn.config import Config
 from hypercorn.middleware import AsyncioWSGIMiddleware
@@ -23,6 +26,8 @@ app.secret_key = os.environ.get('SECRET_KEY') or os.urandom(24)
 socketio = SocketIO(app, manage_session=True)
 
 USERNAME_PATTERN = re.compile(r'^[a-z0-9._-]{3,20}$')
+RATE_LIMIT_STORAGE = defaultdict(deque)
+RATE_LIMIT_LOCK = threading.Lock()
 
 # Initialize VAPID keys for push notifications
 VAPID_PUBLIC_KEY = notifications.init_vapid_keys()
@@ -76,6 +81,46 @@ def can_view_user(viewer_id, target_id):
         return True
     return users_share_group(viewer_id, target_id)
 
+
+def get_rate_limit_key(scope='ip'):
+    if scope == 'token':
+        token = None
+        if request.method == 'POST':
+            payload = request.get_json(silent=True) or {}
+            token = payload.get('token')
+        else:
+            token = request.args.get('token')
+        if token:
+            return f"token:{token}"
+    forwarded_for = request.headers.get('X-Forwarded-For', '')
+    client_ip = forwarded_for.split(',')[0].strip() if forwarded_for else request.remote_addr
+    return f"ip:{client_ip or 'unknown'}"
+
+
+def rate_limit(max_requests, window_seconds, scope='ip'):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            now = time.time()
+            key = f"{func.__name__}:{get_rate_limit_key(scope)}"
+            with RATE_LIMIT_LOCK:
+                attempts = RATE_LIMIT_STORAGE[key]
+                while attempts and now - attempts[0] >= window_seconds:
+                    attempts.popleft()
+                if len(attempts) >= max_requests:
+                    retry_after = max(1, int(window_seconds - (now - attempts[0])))
+                    response = jsonify({
+                        'error': 'Too many requests',
+                        'retry_after': retry_after
+                    })
+                    response.status_code = 429
+                    response.headers['Retry-After'] = str(retry_after)
+                    return response
+                attempts.append(now)
+            return func(*args, **kwargs)
+        return wrapper
+    return decorator
+
 def background_send_message_notification(db_path, recipient_id, sender_name, content, chat_name):
     """
     Background task to send message notifications.
@@ -104,6 +149,7 @@ def register():
     return render_template('register.html')
 
 @app.route('/api/register', methods=['POST'])
+@rate_limit(5, 300, scope='ip')
 def api_register():
     data = get_request_data(request)
     if not data or 'username' not in data or 'email' not in data or 'password' not in data:
@@ -126,6 +172,7 @@ def login():
     return render_template('login.html')
 
 @app.route('/api/login', methods=['POST'])
+@rate_limit(10, 60, scope='ip')
 def api_login():
     data = get_request_data(request)
     if not data or 'username' not in data or 'password' not in data:
@@ -139,6 +186,7 @@ def api_login():
     return {'message': 'Login successful', 'token': user[5]}, 200
 
 @app.route('/api/reset_password', methods=['POST'])
+@rate_limit(5, 300, scope='token')
 def api_reset_password():
     data = get_request_data(request)
     if not data or 'token' not in data or 'old_password' not in data or 'new_password' not in data:
@@ -157,6 +205,7 @@ def api_reset_password():
     return {'message': 'Password reset successful'}, 200
 
 @app.route('/api/friend_request', methods=['POST'])
+@rate_limit(10, 300, scope='token')
 def api_friend_request():
     data = get_request_data(request)
     if not data or 'token' not in data:
@@ -317,6 +366,7 @@ def api_get_chats():
     return {'chats': chats}, 200
 
 @app.route('/api/groups', methods=['POST'])
+@rate_limit(10, 300, scope='token')
 def api_create_group():
     data = get_request_data(request)
     if not data or 'token' not in data or 'name' not in data:
@@ -330,6 +380,7 @@ def api_create_group():
     return {'message': 'Group created', 'group_id': group_id}, 201
 
 @app.route('/api/groups/<group_id>/members', methods=['POST'])
+@rate_limit(20, 300, scope='token')
 def api_add_group_member(group_id):
     data = get_request_data(request)
     if not data or 'token' not in data:
@@ -458,6 +509,7 @@ def api_delete_friend(friend_id):
     return {'message': 'Friend removed'}, 200
 
 @app.route('/api/users/<user_id>/block', methods=['POST'])
+@rate_limit(20, 300, scope='token')
 def api_block_user(user_id):
     data = get_request_data(request)
     if not data or 'token' not in data:
@@ -480,6 +532,7 @@ def api_block_user(user_id):
     return {'message': 'User blocked'}, 200
 
 @app.route('/api/message/send', methods=['POST'])
+@rate_limit(30, 60, scope='token')
 def api_send_message():
     data = get_request_data(request)
     if not data or 'token' not in data or 'chat_id' not in data or 'content' not in data:
