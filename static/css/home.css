@@ -58,7 +58,7 @@ body {
 .home-container {
     text-align: center;
     padding: 40px;
-    background: white;
+    background: var(--bg-card);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-lg);
     max-width: 500px;
@@ -111,7 +111,7 @@ body {
 }
 
 .btn-secondary {
-    background: white;
+    background: var(--bg-card);
     color: var(--text-primary);
     border: 1px solid var(--border);
     flex-wrap: nowrap;

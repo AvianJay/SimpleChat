@@ -64,6 +64,18 @@ def build_user_payload(user):
 def get_group_member_ids(group_id):
     return [member['id'] for member in database.get_group_members(conn, group_id)]
 
+
+def users_share_group(user_id, other_user_id):
+    return database.users_share_group(conn, user_id, other_user_id)
+
+
+def can_view_user(viewer_id, target_id):
+    if viewer_id == target_id:
+        return True
+    if database.friend_status(conn, viewer_id, target_id) == 'accepted':
+        return True
+    return users_share_group(viewer_id, target_id)
+
 def background_send_message_notification(db_path, recipient_id, sender_name, content, chat_name):
     """
     Background task to send message notifications.
@@ -171,17 +183,20 @@ def api_friend_request():
     friend_user = database.get_user(conn, user_id=friend_id)
     if friend_user is None:
         return {'error': 'Friend not found'}, 404
-    # check existing friendship status
+    # check existing friendship status from both directions
     friend_status = database.friend_status(conn, user[0], friend_id)
+    reverse_status = database.friend_status(conn, friend_id, user[0])
     if friend_status == 'accepted':
         return {'error': 'Already friends'}, 400
     elif friend_status == 'pending':
         return {'error': 'Friend request already sent'}, 400
     elif friend_status == 'blocked':
+        return {'error': 'You have blocked this user'}, 400
+    elif reverse_status == 'blocked':
         return {'error': 'You are blocked by this user'}, 400
     else:
         # check if target user is already sent a friend request
-        if database.friend_status(conn, friend_id, user[0]) == 'pending':
+        if reverse_status == 'pending':
             # update the status to accepted
             database.friend(conn, user[0], friend_id, status='accepted')
             emit('update_chat_list', namespace='/chat', to=str(user[0]))
@@ -246,8 +261,7 @@ def api_get_user(user_id):
         user = database.get_user(conn, user_id=user_id)
         if user is None:
             return {'error': 'User not found'}, 404
-        # check if user is friend of me
-        if user[0] not in [f[0] for f in database.get_friends(conn, me[0])]:
+        if not can_view_user(me[0], user[0]):
             return {'error': 'Not friends'}, 403
     return {'user': build_user_payload(user)}, 200
 
@@ -342,6 +356,8 @@ def api_add_group_member(group_id):
         return {'error': 'Invalid user_id'}, 400
     if any(m['id'] == new_member_id for m in members):
         return {'error': 'User is already in the group'}, 400
+    if database.friend_status(conn, user[0], new_member_id) != 'accepted':
+        return {'error': 'Only friends can be added to a group'}, 403
     database.add_group_member(conn, group_id, new_member_id)
     for member_id in get_group_member_ids(group_id):
         emit('update_chat_list', namespace='/chat', to=str(member_id))
@@ -434,9 +450,34 @@ def api_delete_friend(friend_id):
         friend_id = int(friend_id)
     except ValueError:
         return {'error': 'Invalid friend_id'}, 400
-        
+    if database.friend_status(conn, user[0], friend_id) != 'accepted':
+        return {'error': 'Friend not found'}, 404
     database.delete_friend(conn, user[0], friend_id)
+    emit('update_chat_list', namespace='/chat', to=str(user[0]))
+    emit('update_chat_list', namespace='/chat', to=str(friend_id))
     return {'message': 'Friend removed'}, 200
+
+@app.route('/api/users/<user_id>/block', methods=['POST'])
+def api_block_user(user_id):
+    data = get_request_data(request)
+    if not data or 'token' not in data:
+        return {'error': 'Invalid input'}, 400
+    user = database.get_user(conn, token=data['token'])
+    if user is None:
+        return {'error': 'Invalid token'}, 401
+    try:
+        target_user_id = int(user_id)
+    except ValueError:
+        return {'error': 'Invalid user_id'}, 400
+    if target_user_id == user[0]:
+        return {'error': 'Cannot block yourself'}, 400
+    target_user = database.get_user(conn, user_id=target_user_id)
+    if target_user is None:
+        return {'error': 'User not found'}, 404
+    database.block_user(conn, user[0], target_user_id)
+    emit('update_chat_list', namespace='/chat', to=str(user[0]))
+    emit('update_chat_list', namespace='/chat', to=str(target_user_id))
+    return {'message': 'User blocked'}, 200
 
 @app.route('/api/message/send', methods=['POST'])
 def api_send_message():
@@ -599,8 +640,9 @@ def handle_send_friend_request(data):
     if friend_user is None:
         emit('error', {'error': 'Friend not found'})
         return
-    # check existing friendship status
+    # check existing friendship status from both directions
     friend_status = database.friend_status(conn, user_id, friend_id)
+    reverse_status = database.friend_status(conn, friend_id, user_id)
     if friend_status == 'accepted':
         emit('error', {'error': 'Already friends'})
         return
@@ -608,11 +650,20 @@ def handle_send_friend_request(data):
         emit('error', {'error': 'Friend request already sent'})
         return
     elif friend_status == 'blocked':
+        emit('error', {'error': 'You have blocked this user'})
+        return
+    elif reverse_status == 'blocked':
         emit('error', {'error': 'You are blocked by this user'})
         return
     else:
-        database.friend(conn, user_id, friend_id, status='pending')
-        emit('friend_request_sent', {'message': 'Friend request sent'})
+        if reverse_status == 'pending':
+            database.friend(conn, user_id, friend_id, status='accepted')
+            emit('update_chat_list', namespace='/chat', to=str(user_id))
+            emit('update_chat_list', namespace='/chat', to=str(friend_id))
+            emit('friend_request_accepted', {'user_id': user_id, 'name': session.get('display_name') or session.get('username')}, namespace='/chat', to=str(friend_id))
+        else:
+            database.friend(conn, user_id, friend_id, status='pending')
+            emit('friend_request_sent', {'message': 'Friend request sent'})
 
 @app.route('/test')
 def test():

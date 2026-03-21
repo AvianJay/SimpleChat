@@ -286,7 +286,7 @@ def get_chats(conn, user_id):
     user_chats = cursor.fetchall()
     user_chats = [{
         'id': chat[3],
-        'name': chat[4] or chat[1],
+        'name': chat[5] or chat[1],
         'username': chat[1],
         'email': chat[2],
         'user_id': chat[0],
@@ -358,6 +358,30 @@ def delete_friend(conn, user_id, friend_id):
         WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)
     ''', (user_id, friend_id, friend_id, user_id))
     conn.commit()
+
+def block_user(conn, user_id, target_id):
+    """Block a user and remove any existing friendship state."""
+    delete_friend(conn, user_id, target_id)
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO friendships (user_id, friend_id, status)
+        VALUES (?, ?, 'blocked')
+        ON CONFLICT(user_id, friend_id) DO UPDATE SET status = 'blocked'
+    ''', (user_id, target_id))
+    conn.commit()
+    return cursor.lastrowid
+
+def users_share_group(conn, user_id, other_user_id):
+    """Return True if two users are in at least one common group."""
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT 1
+        FROM group_members gm1
+        JOIN group_members gm2 ON gm1.group_id = gm2.group_id
+        WHERE gm1.user_id = ? AND gm2.user_id = ?
+        LIMIT 1
+    ''', (user_id, other_user_id))
+    return cursor.fetchone() is not None
 
 def update_message(conn, message_id, content):
     """Update a message content."""

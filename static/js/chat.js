@@ -58,6 +58,7 @@ class ChatApp {
         this.chatContainer = document.querySelector('.chat-container');
         this.mobileBackBtn = document.getElementById('mobile-back-btn');
         this.loadingElem = document.getElementById('loading');
+        this.contextMenu = document.getElementById('chat-context-menu');
 
         this.addFriendBtn = document.getElementById('add-friend-btn');
         this.friendRequestsBtn = document.getElementById('friend-requests-btn');
@@ -92,6 +93,9 @@ class ChatApp {
         });
 
         window.addEventListener('hashchange', () => this.onHashChange());
+        window.addEventListener('click', () => this.hideContextMenu());
+        window.addEventListener('resize', () => this.hideContextMenu());
+        document.addEventListener('scroll', () => this.hideContextMenu(), true);
 
         this.addFriendBtn.addEventListener('click', () => this.openModal(this.addFriendModal));
         this.friendRequestsBtn.addEventListener('click', () => {
@@ -237,6 +241,9 @@ class ChatApp {
             const li = document.createElement('li');
             li.dataset.chatType = chat.chat_type;
             li.dataset.chatId = chat.id;
+            if (chat.user_id) {
+                li.dataset.userId = chat.user_id;
+            }
 
             const title = document.createElement('span');
             title.className = 'chat-list-title';
@@ -250,6 +257,10 @@ class ChatApp {
             li.appendChild(badge);
             li.addEventListener('click', () => {
                 window.location.hash = `#${chat.chat_type}/${chat.id}`;
+            });
+            li.addEventListener('contextmenu', (event) => {
+                event.preventDefault();
+                this.openContextMenu(event, chat);
             });
 
             this.chatList.appendChild(li);
@@ -566,7 +577,7 @@ class ChatApp {
 
             const info = document.createElement('div');
             info.innerHTML = `
-                <strong>${member.name}</strong>
+                <strong>${member.name || member.username}</strong>
                 <div class="list-subtext">@${member.username} · ${member.role}</div>
             `;
 
@@ -625,6 +636,130 @@ class ChatApp {
             await this.loadGroupMembers();
             await this.loadChats();
             this.showToast('群組成員', data.message, null, 'green');
+        } catch (error) {
+            this.handleError(error.message, error);
+        }
+    }
+
+    openContextMenu(event, chat) {
+        if (!this.contextMenu) {
+            return;
+        }
+
+        const actions = [];
+        if (chat.chat_type === 'user' && chat.user_id) {
+            actions.push({
+                label: '解除好友',
+                className: 'danger',
+                onClick: () => this.removeFriend(chat)
+            });
+            actions.push({
+                label: '封鎖',
+                className: 'danger',
+                onClick: () => this.blockUser(chat)
+            });
+        }
+        if (chat.chat_type === 'group') {
+            actions.push({
+                label: '離開群組',
+                className: 'danger',
+                onClick: () => this.leaveGroupFromChat(chat)
+            });
+        }
+
+        if (!actions.length) {
+            return;
+        }
+
+        this.contextMenu.innerHTML = '';
+        actions.forEach((action) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.textContent = action.label;
+            button.className = action.className || '';
+            button.addEventListener('click', async () => {
+                this.hideContextMenu();
+                await action.onClick();
+            });
+            this.contextMenu.appendChild(button);
+        });
+
+        this.contextMenu.hidden = false;
+        this.contextMenu.style.left = `${event.clientX}px`;
+        this.contextMenu.style.top = `${event.clientY}px`;
+    }
+
+    hideContextMenu() {
+        if (this.contextMenu) {
+            this.contextMenu.hidden = true;
+        }
+    }
+
+    async removeFriend(chat = this.currentChat) {
+        if (!chat || chat.chat_type !== 'user' || !chat.user_id) {
+            return;
+        }
+        if (!confirm(`解除好友：${chat.name}？`)) {
+            return;
+        }
+
+        try {
+            const data = await this.apiFetch(`/api/friends/${chat.user_id}?token=${encodeURIComponent(this.token)}`, {
+                method: 'DELETE'
+            });
+            if (this.currentChat && String(this.currentChat.id) === String(chat.id) && this.currentChat.chat_type === 'user') {
+                window.location.hash = '';
+            }
+            await this.loadChats();
+            this.showToast('好友', data.message, null, 'green');
+        } catch (error) {
+            this.handleError(error.message, error);
+        }
+    }
+
+    async blockUser(chat = this.currentChat) {
+        if (!chat || chat.chat_type !== 'user' || !chat.user_id) {
+            return;
+        }
+        if (!confirm(`封鎖使用者：${chat.name}？`)) {
+            return;
+        }
+
+        try {
+            const data = await this.apiFetch(`/api/users/${chat.user_id}/block`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token: this.token })
+            });
+            if (this.currentChat && String(this.currentChat.id) === String(chat.id) && this.currentChat.chat_type === 'user') {
+                window.location.hash = '';
+            }
+            await this.loadChats();
+            this.showToast('使用者', data.message, null, 'green');
+        } catch (error) {
+            this.handleError(error.message, error);
+        }
+    }
+
+    async leaveGroupFromChat(chat) {
+        if (!chat || chat.chat_type !== 'group') {
+            return;
+        }
+        if (!confirm(`離開群組：${chat.name}？`)) {
+            return;
+        }
+
+        try {
+            const data = await this.apiFetch(`/api/groups/${chat.id}/leave`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token: this.token })
+            });
+            if (this.currentChat && String(this.currentChat.id) === String(chat.id) && this.currentChat.chat_type === 'group') {
+                window.location.hash = '';
+            }
+            await this.loadChats();
+            this.showToast('蝢斤?', data.message, null, 'green');
         } catch (error) {
             this.handleError(error.message, error);
         }

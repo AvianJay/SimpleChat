@@ -27,6 +27,24 @@
     --radius-sm: 8px;
 }
 
+:root[data-theme='dark'] {
+    --bg-app: #0f172a;
+    --bg-card: #111827;
+    --bg-sidebar: #172033;
+    --text-primary: #e5eefb;
+    --text-secondary: #a7b4c8;
+    --text-muted: #7b8aa2;
+    --primary: #7c93ff;
+    --primary-hover: #95a8ff;
+    --primary-light: rgba(124, 147, 255, 0.18);
+    --danger: #f87171;
+    --success: #34d399;
+    --border: #243145;
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.35);
+    --shadow-md: 0 4px 12px rgb(0 0 0 / 0.35);
+    --shadow-lg: 0 18px 40px rgb(0 0 0 / 0.45);
+}
+
 * {
     box-sizing: border-box;
 }
@@ -45,6 +63,10 @@ body {
     overflow: hidden;
 }
 
+a {
+    color: inherit;
+}
+
 .app-background {
     position: fixed;
     top: 0;
@@ -54,6 +76,34 @@ body {
     background: radial-gradient(circle at top right, #e0e7ff, transparent 40%),
         radial-gradient(circle at bottom left, #f1f5f9, transparent 40%);
     z-index: -1;
+}
+
+:root[data-theme='dark'] .app-background {
+    background: radial-gradient(circle at top right, rgba(124, 147, 255, 0.18), transparent 35%),
+        radial-gradient(circle at bottom left, rgba(16, 185, 129, 0.14), transparent 30%),
+        linear-gradient(180deg, #08111f 0%, #0f172a 100%);
+}
+
+.theme-toggle {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 250;
+    border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--bg-card) 88%, transparent);
+    color: var(--text-primary);
+    border-radius: 999px;
+    padding: 10px 14px;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: var(--shadow-sm);
+    backdrop-filter: blur(10px);
+}
+
+.theme-toggle:hover {
+    border-color: var(--primary);
+    color: var(--primary);
 }
 
 .chat-container {
@@ -138,7 +188,7 @@ body {
 .error-message {
     margin-top: 12px;
     padding: 10px;
-    background: #fef2f2;
+    background: color-mix(in srgb, var(--danger) 15%, var(--bg-card));
     color: var(--danger);
     border-radius: var(--radius-sm);
     font-size: 13px;
@@ -168,7 +218,7 @@ body {
 
 .toolbar-button {
     border: 1px solid var(--border);
-    background: white;
+    background: var(--bg-card);
     color: var(--text-primary);
     border-radius: var(--radius-md);
     padding: 10px 12px;
@@ -222,17 +272,17 @@ body {
 }
 
 .chat-badge.user {
-    background: #dbeafe;
-    color: #1d4ed8;
+    background: color-mix(in srgb, var(--primary) 16%, var(--bg-card));
+    color: var(--primary);
 }
 
 .chat-badge.group {
-    background: #dcfce7;
-    color: #15803d;
+    background: color-mix(in srgb, var(--success) 18%, var(--bg-card));
+    color: var(--success);
 }
 
 #chat-list li:hover {
-    background: white;
+    background: var(--bg-card);
     box-shadow: var(--shadow-sm);
 }
 
@@ -242,12 +292,43 @@ body {
     box-shadow: var(--shadow-md);
 }
 
+.context-menu {
+    position: fixed;
+    z-index: 200;
+    min-width: 180px;
+    padding: 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--bg-card);
+    box-shadow: var(--shadow-lg);
+}
+
+.context-menu button {
+    width: 100%;
+    border: none;
+    background: transparent;
+    color: var(--text-primary);
+    text-align: left;
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font: inherit;
+}
+
+.context-menu button:hover {
+    background: var(--bg-app);
+}
+
+.context-menu button.danger {
+    color: #b91c1c;
+}
+
 /* Chat Window */
 .chat-window {
     flex: 1;
     display: flex;
     flex-direction: column;
-    background: white;
+    background: var(--bg-card);
     position: relative;
 }
 
@@ -257,7 +338,7 @@ body {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    background: rgba(255, 255, 255, 0.8);
+    background: color-mix(in srgb, var(--bg-card) 88%, transparent);
     backdrop-filter: blur(10px);
     z-index: 10;
 }
@@ -367,7 +448,7 @@ body {
 .input-area {
     padding: 20px 24px;
     border-top: 1px solid var(--border);
-    background: white;
+    background: var(--bg-card);
 }
 
 .input-wrapper {
@@ -381,7 +462,7 @@ body {
 }
 
 .input-wrapper:focus-within {
-    background: white;
+    background: var(--bg-card);
     border-color: var(--primary);
     box-shadow: 0 0 0 4px var(--primary-light);
 }
@@ -459,10 +540,10 @@ body {
 }
 
 .modal-content {
-    background-color: #fefefe;
+    background-color: var(--bg-card);
     margin: 15% auto;
     padding: 24px;
-    border: 1px solid #888;
+    border: 1px solid var(--border);
     width: 90%;
     max-width: 400px;
     border-radius: var(--radius-lg);
@@ -484,7 +565,7 @@ body {
 }
 
 .close-modal {
-    color: #aaa;
+    color: var(--text-muted);
     float: right;
     font-size: 28px;
     font-weight: bold;
@@ -493,7 +574,7 @@ body {
 
 .close-modal:hover,
 .close-modal:focus {
-    color: black;
+    color: var(--text-primary);
     text-decoration: none;
     cursor: pointer;
 }
@@ -572,8 +653,8 @@ body {
 }
 
 .btn-danger-inline {
-    background: #fee2e2;
-    color: #b91c1c;
+    background: color-mix(in srgb, var(--danger) 16%, var(--bg-card));
+    color: var(--danger);
     padding: 6px 12px;
 }
 
@@ -703,5 +784,12 @@ body {
 
     .inline-button {
         width: 100%;
+    }
+
+    .theme-toggle {
+        top: 12px;
+        right: 12px;
+        padding: 8px 12px;
+        font-size: 14px;
     }
 }

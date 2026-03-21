@@ -122,8 +122,11 @@ def send_push_notification(subscription_info, notification_data):
         return True
     except WebPushException as e:
         print(f"WebPush failed: {e}")
-        # If subscription is invalid (410 Gone), we should remove it
-        if e.response and e.response.status_code == 410:
+        status_code = getattr(getattr(e, 'response', None), 'status_code', None)
+        if status_code in (404, 410):
+            return 'gone'
+        error_text = str(e).lower()
+        if '410' in error_text or '404' in error_text or 'gone' in error_text:
             return 'gone'
         return False
     except Exception as e:

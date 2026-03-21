@@ -1,4 +1,32 @@
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,20}$/;
+const THEME_STORAGE_KEY = 'theme_preference';
+
+function getPreferredTheme() {
+    const savedTheme = localStorage.getItem(THEME_STORAGE_KEY);
+    if (savedTheme === 'light' || savedTheme === 'dark') {
+        return savedTheme;
+    }
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    document.querySelectorAll('[data-theme-toggle]').forEach((button) => {
+        button.textContent = theme === 'dark' ? '淺色模式' : '深色模式';
+        button.setAttribute('aria-label', theme === 'dark' ? '切換到淺色模式' : '切換到深色模式');
+    });
+}
+
+function initializeThemeToggle() {
+    applyTheme(getPreferredTheme());
+    document.querySelectorAll('[data-theme-toggle]').forEach((button) => {
+        button.addEventListener('click', () => {
+            const nextTheme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+            localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+            applyTheme(nextTheme);
+        });
+    });
+}
 
 function login() {
     const username = document.getElementById('username').value.trim().toLowerCase();
@@ -95,3 +123,7 @@ function resetPassword() {
             }
         });
 }
+
+document.addEventListener('DOMContentLoaded', () => {
+    initializeThemeToggle();
+});

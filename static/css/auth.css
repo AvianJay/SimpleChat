@@ -1,5 +1,5 @@
 .auth-container {
-    background: white;
+    background: var(--bg-card);
     padding: 40px;
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-lg);
@@ -32,6 +32,8 @@
     border-radius: var(--radius-md);
     font-size: 15px;
     font-family: inherit;
+    background: var(--bg-card);
+    color: var(--text-primary);
     transition: all 0.2s;
 }
 
