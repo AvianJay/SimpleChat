@@ -28,6 +28,12 @@ def init_database(db_name='app.db'):
 
     if not _column_exists(cursor, 'users', 'display_name'):
         cursor.execute('ALTER TABLE users ADD COLUMN display_name TEXT')
+    if not _column_exists(cursor, 'users', 'avatar_path'):
+        cursor.execute('ALTER TABLE users ADD COLUMN avatar_path TEXT')
+    if not _column_exists(cursor, 'users', 'email_verified'):
+        cursor.execute("ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 0")
+    if not _column_exists(cursor, 'users', 'email_verification_token'):
+        cursor.execute('ALTER TABLE users ADD COLUMN email_verification_token TEXT')
 
     cursor.execute('''
         UPDATE users
@@ -140,6 +146,31 @@ def create_user_with_profile(conn, username, email, password, display_name=None,
     conn.commit()
     return cursor.lastrowid
 
+def set_email_verification_token(conn, user_id, verification_token):
+    cursor = conn.cursor()
+    cursor.execute('''
+        UPDATE users
+        SET email_verification_token = ?, email_verified = 0
+        WHERE id = ?
+    ''', (verification_token, user_id))
+    conn.commit()
+    return cursor.rowcount > 0
+
+def verify_user_email(conn, verification_token):
+    cursor = conn.cursor()
+    cursor.execute('''
+        UPDATE users
+        SET email_verified = 1, email_verification_token = NULL
+        WHERE email_verification_token = ?
+    ''', (verification_token,))
+    conn.commit()
+    return cursor.rowcount > 0
+
+def get_user_by_email_verification_token(conn, verification_token):
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM users WHERE email_verification_token = ?', (verification_token,))
+    return cursor.fetchone()
+
 def get_user(conn, user_id=None, user_name=None, email=None, token=None):
     """Retrieve a user from the users table."""
     cursor = conn.cursor()
@@ -242,7 +273,7 @@ def get_friends(conn, user_id):
     """Retrieve a list of friends for a user."""
     cursor = conn.cursor()
     cursor.execute('''
-        SELECT u.id, u.name, u.email, f.status, u.display_name
+        SELECT u.id, u.name, u.email, f.status, u.display_name, u.avatar_path
         FROM users u
         JOIN friendships f ON u.id = f.friend_id
         WHERE f.user_id = ? AND f.status = 'accepted'
@@ -253,7 +284,7 @@ def get_pending_requests(conn, user_id):
     """Retrieve a list of pending friend requests for a user."""
     cursor = conn.cursor()
     cursor.execute('''
-        SELECT u.id, u.name, u.email, u.display_name
+        SELECT u.id, u.name, u.email, u.display_name, u.avatar_path
         FROM users u
         JOIN friendships f ON u.id = f.user_id
         WHERE f.friend_id = ? AND f.status = 'pending'
@@ -274,7 +305,8 @@ def get_chats(conn, user_id):
             u.email,
             udm.dm_id,
             'user' AS chat_type,
-            u.display_name
+            u.display_name,
+            u.avatar_path
         FROM user_dms udm
         JOIN users u ON u.id = CASE
                                     WHEN udm.user_id = ? THEN udm.target_id
@@ -290,7 +322,8 @@ def get_chats(conn, user_id):
         'username': chat[1],
         'email': chat[2],
         'user_id': chat[0],
-        'chat_type': 'user'
+        'chat_type': 'user',
+        'avatar_path': chat[6]
     } for chat in user_chats]
     
     # Group chats
@@ -334,7 +367,7 @@ def get_group_members(conn, group_id):
     """Get all members of a group."""
     cursor = conn.cursor()
     cursor.execute('''
-        SELECT u.id, u.name, u.email, gm.role, u.display_name
+        SELECT u.id, u.name, u.email, gm.role, u.display_name, u.avatar_path
         FROM users u
         JOIN group_members gm ON u.id = gm.user_id
         WHERE gm.group_id = ?
@@ -346,9 +379,17 @@ def get_group_members(conn, group_id):
         'name': member[4] or member[1],
         'username': member[1],
         'email': member[2],
-        'role': member[3]
+        'role': member[3],
+        'avatar_path': member[5]
     } for member in group_members]
     return group_members
+
+def update_user_avatar(conn, user_id, avatar_path):
+    """Update avatar path for a user."""
+    cursor = conn.cursor()
+    cursor.execute('UPDATE users SET avatar_path = ? WHERE id = ?', (avatar_path, user_id))
+    conn.commit()
+    return cursor.rowcount > 0
 
 def delete_friend(conn, user_id, friend_id):
     """Delete a friendship."""

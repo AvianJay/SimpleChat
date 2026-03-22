@@ -2,16 +2,20 @@ from flask import Flask, request, render_template, jsonify
 from flask_socketio import SocketIO, emit, join_room
 from flask import session
 import database
+from graph_mailer import GraphMailer
 import hashlib
 import os
 import re
 import time
+import uuid
+import secrets
 from config import config
 import notifications
 import threading
 import asyncio
 from collections import defaultdict, deque
 from functools import wraps
+from werkzeug.utils import secure_filename
 from hypercorn.asyncio import serve
 from hypercorn.config import Config
 from hypercorn.middleware import AsyncioWSGIMiddleware
@@ -19,15 +23,19 @@ import socketio as sio_lib
 
 database.init_database(config("database_path"))
 conn = database.create_connection(config("database_path"))
-app = Flask(__name__)
-# secret key required for flask session and socketio session management
-app.secret_key = os.environ.get('SECRET_KEY') or os.urandom(24)
-# manage_session=True lets Flask-SocketIO use Flask's session inside events
-socketio = SocketIO(app, manage_session=True)
-
 USERNAME_PATTERN = re.compile(r'^[a-z0-9._-]{3,20}$')
 RATE_LIMIT_STORAGE = defaultdict(deque)
 RATE_LIMIT_LOCK = threading.Lock()
+AVATAR_UPLOAD_DIR = os.path.join('static', 'uploads', 'avatars')
+ALLOWED_AVATAR_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp', '.gif'}
+MAX_AVATAR_SIZE = 2 * 1024 * 1024
+
+app = Flask(__name__)
+# secret key required for flask session and socketio session management
+app.secret_key = os.environ.get('SECRET_KEY') or os.urandom(24)
+app.config['MAX_CONTENT_LENGTH'] = MAX_AVATAR_SIZE
+# manage_session=True lets Flask-SocketIO use Flask's session inside events
+socketio = SocketIO(app, manage_session=True)
 
 # Initialize VAPID keys for push notifications
 VAPID_PUBLIC_KEY = notifications.init_vapid_keys()
@@ -55,11 +63,25 @@ def get_user_display_name(user):
     return user[7] if len(user) > 7 and user[7] else user[1]
 
 
+def get_user_avatar_path(user):
+    return user[8] if len(user) > 8 and user[8] else None
+
+
+def build_avatar_url(avatar_path):
+    if not avatar_path:
+        return None
+    normalized = avatar_path.replace('\\', '/').lstrip('/')
+    return f"/{normalized}"
+
+
 def build_user_payload(user):
     return {
         'id': user[0],
         'username': user[1],
         'display_name': get_user_display_name(user),
+        'avatar_path': get_user_avatar_path(user),
+        'avatar_url': build_avatar_url(get_user_avatar_path(user)),
+        'email_verified': bool(user[9]) if len(user) > 9 else False,
         'email': user[2],
         'role': user[4],
         'created_at': user[6]
@@ -87,7 +109,7 @@ def get_rate_limit_key(scope='ip'):
         token = None
         if request.method == 'POST':
             payload = request.get_json(silent=True) or {}
-            token = payload.get('token')
+            token = payload.get('token') or request.form.get('token')
         else:
             token = request.args.get('token')
         if token:
@@ -144,6 +166,59 @@ def get_request_data(request):
         reqdata = request.args.copy()
     return reqdata
 
+
+def validate_avatar_upload(file_storage):
+    if file_storage is None or not file_storage.filename:
+        return 'Avatar file is required'
+    filename = secure_filename(file_storage.filename)
+    extension = os.path.splitext(filename)[1].lower()
+    if extension not in ALLOWED_AVATAR_EXTENSIONS:
+        return 'Unsupported avatar format'
+    file_storage.stream.seek(0, os.SEEK_END)
+    size = file_storage.stream.tell()
+    file_storage.stream.seek(0)
+    if size <= 0:
+        return 'Avatar file is empty'
+    if size > MAX_AVATAR_SIZE:
+        return 'Avatar must be 2MB or smaller'
+    if not (file_storage.mimetype or '').startswith('image/'):
+        return 'Unsupported avatar format'
+    return None
+
+
+def get_graph_mailer():
+    if not config('mail_enabled'):
+        return None
+    required_keys = ['mail_tenant_id', 'mail_client_id', 'mail_client_secret', 'mail_sender']
+    if not all(config(key) for key in required_keys):
+        return None
+    return GraphMailer(
+        tenant_id=config('mail_tenant_id'),
+        client_id=config('mail_client_id'),
+        client_secret=config('mail_client_secret'),
+        verify_ssl=config('mail_verify_ssl')
+    )
+
+
+def send_verification_email(user, verification_token):
+    mailer = get_graph_mailer()
+    if mailer is None:
+        return False, 'Mail service is not configured'
+
+    verification_url = f"{config('public_base_url').rstrip('/')}/verify_email?token={verification_token}"
+    message_args = {
+        'subject': 'Verify your SimpleChat email',
+        'toRecipients': [{'address': user[2], 'name': get_user_display_name(user)}],
+        'body': (
+            f"<p>Hello {get_user_display_name(user)},</p>"
+            f"<p>Please verify your email for SimpleChat by clicking the link below:</p>"
+            f"<p><a href=\"{verification_url}\">{verification_url}</a></p>"
+            "<p>If you did not create this account, you can ignore this email.</p>"
+        )
+    }
+    result = mailer.send_mail(config('mail_sender'), message_args)
+    return (bool(result), None if result else 'Failed to send verification email')
+
 @app.route('/register')
 def register():
     return render_template('register.html')
@@ -154,6 +229,8 @@ def api_register():
     data = get_request_data(request)
     if not data or 'username' not in data or 'email' not in data or 'password' not in data:
         return {'error': 'Invalid input'}, 400
+    if get_graph_mailer() is None:
+        return {'error': 'Email verification is not configured'}, 503
     username = normalize_username(data['username'])
     if not USERNAME_PATTERN.fullmatch(username):
         return {'error': 'Username must be 3-20 characters and only use lowercase letters, numbers, ., _, -'}, 400
@@ -165,7 +242,16 @@ def api_register():
         return {'error': 'Username already taken'}, 400
     display_name = normalize_display_name(data.get('display_name'), username)
     user_id = database.create_user_with_profile(conn, username, data['email'], data['password'], display_name=display_name)
-    return {'message': 'User registered', 'user_id': user_id}, 201
+    verification_token = secrets.token_urlsafe(32)
+    database.set_email_verification_token(conn, user_id, verification_token)
+    user = database.get_user(conn, user_id=user_id)
+    sent, error = send_verification_email(user, verification_token)
+    return {
+        'message': 'User registered. Please verify your email before logging in.',
+        'user_id': user_id,
+        'verification_email_sent': sent,
+        'mail_error': error
+    }, 201
 
 @app.route('/login')
 def login():
@@ -180,10 +266,46 @@ def api_login():
     user = database.get_user(conn, user_name=normalize_username(data['username']))
     if user is None:
         return {'error': 'User not found'}, 404
+    if len(user) > 9 and not user[9]:
+        return {'error': 'Email not verified'}, 403
     hashed_password = hashlib.sha256(data['password'].encode()).hexdigest()
     if user[3] != hashed_password:
         return {'error': 'Incorrect password'}, 401
     return {'message': 'Login successful', 'token': user[5]}, 200
+
+@app.route('/verify_email', methods=['GET'])
+def verify_email():
+    verification_token = request.args.get('token')
+    if not verification_token:
+        return {'error': 'Missing verification token'}, 400
+    user = database.get_user_by_email_verification_token(conn, verification_token)
+    if user is None:
+        return render_template('home.html'), 400
+    database.verify_user_email(conn, verification_token)
+    return render_template('login.html')
+
+@app.route('/api/verify_email/resend', methods=['POST'])
+@rate_limit(5, 300, scope='ip')
+def api_resend_verification_email():
+    data = get_request_data(request)
+    if not data or ('email' not in data and 'username' not in data):
+        return {'error': 'Invalid input'}, 400
+    user = None
+    if data.get('email'):
+        user = database.get_user(conn, email=data['email'])
+    elif data.get('username'):
+        user = database.get_user(conn, user_name=normalize_username(data['username']))
+    if user is None:
+        return {'error': 'User not found'}, 404
+    if len(user) > 9 and user[9]:
+        return {'message': 'Email already verified'}, 200
+
+    verification_token = secrets.token_urlsafe(32)
+    database.set_email_verification_token(conn, user[0], verification_token)
+    sent, error = send_verification_email(database.get_user(conn, user_id=user[0]), verification_token)
+    if not sent:
+        return {'error': error or 'Failed to send verification email'}, 500
+    return {'message': 'Verification email sent'}, 200
 
 @app.route('/api/reset_password', methods=['POST'])
 @rate_limit(5, 300, scope='token')
@@ -275,7 +397,9 @@ def api_get_friends():
         'username': f[1],
         'display_name': f[4] or f[1],
         'email': f[2],
-        'status': f[3]
+        'status': f[3],
+        'avatar_path': f[5],
+        'avatar_url': build_avatar_url(f[5])
     } for f in friends]
     return {'friends': friends_list}, 200
 
@@ -292,9 +416,49 @@ def api_get_friend_requests():
         'id': r[0],
         'username': r[1],
         'display_name': r[3] or r[1],
-        'email': r[2]
+        'email': r[2],
+        'avatar_path': r[4],
+        'avatar_url': build_avatar_url(r[4])
     } for r in requests]
     return {'requests': requests_list}, 200
+
+@app.route('/api/profile/avatar', methods=['POST'])
+@rate_limit(10, 300, scope='token')
+def api_upload_avatar():
+    token = request.form.get('token')
+    if not token:
+        return {'error': 'Invalid input'}, 400
+    user = database.get_user(conn, token=token)
+    if user is None:
+        return {'error': 'Invalid token'}, 401
+    avatar = request.files.get('avatar')
+    validation_error = validate_avatar_upload(avatar)
+    if validation_error:
+        return {'error': validation_error}, 400
+
+    os.makedirs(AVATAR_UPLOAD_DIR, exist_ok=True)
+    old_avatar_path = get_user_avatar_path(user)
+    extension = os.path.splitext(secure_filename(avatar.filename))[1].lower()
+    stored_filename = f"{user[0]}-{uuid.uuid4().hex}{extension}"
+    relative_path = os.path.join('static', 'uploads', 'avatars', stored_filename)
+    absolute_path = os.path.join(os.getcwd(), relative_path)
+    avatar.save(absolute_path)
+    database.update_user_avatar(conn, user[0], relative_path)
+
+    if old_avatar_path:
+        old_absolute_path = os.path.join(os.getcwd(), old_avatar_path)
+        if os.path.exists(old_absolute_path) and os.path.abspath(old_absolute_path) != os.path.abspath(absolute_path):
+            try:
+                os.remove(old_absolute_path)
+            except OSError:
+                pass
+
+    emit('update_chat_list', namespace='/chat', to=str(user[0]))
+    return {
+        'message': 'Avatar updated',
+        'avatar_path': relative_path,
+        'avatar_url': build_avatar_url(relative_path)
+    }, 200
 
 @app.route('/api/user/<user_id>', methods=['POST'])
 def api_get_user(user_id):
@@ -363,6 +527,9 @@ def api_get_chats():
     if user is None:
         return {'error': 'Invalid token'}, 401
     chats = database.get_chats(conn, user[0])
+    for chat in chats:
+        if chat.get('avatar_path'):
+            chat['avatar_url'] = build_avatar_url(chat['avatar_path'])
     return {'chats': chats}, 200
 
 @app.route('/api/groups', methods=['POST'])
@@ -425,6 +592,9 @@ def api_get_group_members(group_id):
     members = database.get_group_members(conn, group_id)
     if not any(member['id'] == user[0] for member in members):
         return {'error': 'Not authorized'}, 403
+    for member in members:
+        if member.get('avatar_path'):
+            member['avatar_url'] = build_avatar_url(member['avatar_path'])
     return {'members': members}, 200
 
 @app.route('/api/groups/<group_id>/members/<user_id>', methods=['DELETE'])

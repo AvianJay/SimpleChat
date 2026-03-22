@@ -44,6 +44,10 @@ function login() {
             if (data.token) {
                 localStorage.setItem('token', data.token);
                 window.location.href = '/chat';
+            } else if (data.error === 'Email not verified') {
+                if (confirm('電子郵件尚未驗證。要重寄驗證信嗎？')) {
+                    resendVerificationEmail({ username });
+                }
             } else {
                 alert(`登入失敗: ${data.error}`);
             }
@@ -89,10 +93,29 @@ function register() {
         .then((response) => response.json())
         .then((data) => {
             if (data.message) {
-                alert('註冊成功，請重新登入。');
+                const suffix = data.verification_email_sent ? '請到信箱完成驗證後再登入。' : `驗證信未送出: ${data.mail_error || 'unknown error'}`;
+                alert(`註冊成功。${suffix}`);
                 window.location.href = '/login';
             } else {
                 alert(`註冊失敗: ${data.error}`);
+            }
+        });
+}
+
+function resendVerificationEmail(payload) {
+    fetch('/api/verify_email/resend', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+    })
+        .then((response) => response.json())
+        .then((data) => {
+            if (data.message) {
+                alert(data.message);
+            } else {
+                alert(`重寄驗證信失敗: ${data.error}`);
             }
         });
 }

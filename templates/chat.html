@@ -48,6 +48,9 @@
 
             <div class="chats-list-container">
                 <div class="sidebar-actions">
+                    <button id="avatar-settings-btn" class="toolbar-button" title="頭像">
+                        <span>頭像</span>
+                    </button>
                     <button id="add-friend-btn" class="toolbar-button" title="新增好友">
                         <span>加好友</span>
                     </button>
@@ -117,6 +120,18 @@
             <span class="close-modal">&times;</span>
             <h3>好友邀請</h3>
             <ul id="friend-requests-list"></ul>
+        </div>
+    </div>
+
+    <div id="avatar-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-modal">&times;</span>
+            <h3>更新頭像</h3>
+            <div id="avatar-preview" class="avatar-modal-preview"></div>
+            <div class="form-group">
+                <input type="file" id="avatar-file-input" class="form-input" accept="image/png,image/jpeg,image/webp,image/gif">
+            </div>
+            <button id="confirm-avatar-upload" class="btn-primary">上傳頭像</button>
         </div>
     </div>
 

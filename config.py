@@ -20,6 +20,13 @@ default_config = {
     "ssl_key": "",
     "debug": False,
     "database_path": "app.db",
+    "public_base_url": "http://127.0.0.1:5000",
+    "mail_enabled": False,
+    "mail_verify_ssl": True,
+    "mail_tenant_id": "",
+    "mail_client_id": "",
+    "mail_client_secret": "",
+    "mail_sender": "",
     "vapid_private_key": None,
     "vapid_public_key": None,
 }

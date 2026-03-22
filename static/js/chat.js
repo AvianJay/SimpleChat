@@ -10,6 +10,7 @@ class ChatApp {
         this.chats = [];
         this.cachedUsers = new Map();
         this.currentGroupMembers = [];
+        this.avatarPreviewUrl = null;
     }
 
     init() {
@@ -29,7 +30,7 @@ class ChatApp {
                     return;
                 }
                 this.currentUser = user;
-                document.getElementById('welcome-message').innerText = `${user.display_name} (@${user.username})`;
+                this.renderCurrentUserSummary();
                 this.initSocket();
                 return this.loadChats();
             })
@@ -60,16 +61,20 @@ class ChatApp {
         this.loadingElem = document.getElementById('loading');
         this.contextMenu = document.getElementById('chat-context-menu');
 
+        this.avatarSettingsBtn = document.getElementById('avatar-settings-btn');
         this.addFriendBtn = document.getElementById('add-friend-btn');
         this.friendRequestsBtn = document.getElementById('friend-requests-btn');
         this.createGroupBtn = document.getElementById('create-group-btn');
         this.groupActionsBtn = document.getElementById('group-actions-btn');
 
+        this.avatarModal = document.getElementById('avatar-modal');
         this.addFriendModal = document.getElementById('add-friend-modal');
         this.friendRequestsModal = document.getElementById('friend-requests-modal');
         this.createGroupModal = document.getElementById('create-group-modal');
         this.groupMembersModal = document.getElementById('group-members-modal');
 
+        this.avatarFileInput = document.getElementById('avatar-file-input');
+        this.avatarPreview = document.getElementById('avatar-preview');
         this.friendUsernameInput = document.getElementById('friend-username-input');
         this.friendRequestsList = document.getElementById('friend-requests-list');
         this.groupNameInput = document.getElementById('group-name-input');
@@ -97,6 +102,10 @@ class ChatApp {
         window.addEventListener('resize', () => this.hideContextMenu());
         document.addEventListener('scroll', () => this.hideContextMenu(), true);
 
+        this.avatarSettingsBtn.addEventListener('click', () => {
+            this.renderAvatarPreview();
+            this.openModal(this.avatarModal);
+        });
         this.addFriendBtn.addEventListener('click', () => this.openModal(this.addFriendModal));
         this.friendRequestsBtn.addEventListener('click', () => {
             this.openModal(this.friendRequestsModal);
@@ -105,6 +114,8 @@ class ChatApp {
         this.createGroupBtn.addEventListener('click', () => this.openModal(this.createGroupModal));
         this.groupActionsBtn.addEventListener('click', () => this.openGroupMembersModal());
 
+        this.avatarFileInput.addEventListener('change', () => this.renderAvatarPreview());
+        document.getElementById('confirm-avatar-upload').addEventListener('click', () => this.uploadAvatar());
         document.getElementById('confirm-add-friend').addEventListener('click', () => this.sendFriendRequest());
         document.getElementById('confirm-create-group').addEventListener('click', () => this.createGroup());
         document.getElementById('confirm-add-group-member').addEventListener('click', () => this.addGroupMember());
@@ -116,7 +127,7 @@ class ChatApp {
         });
 
         window.addEventListener('click', (event) => {
-            [this.addFriendModal, this.friendRequestsModal, this.createGroupModal, this.groupMembersModal].forEach((modal) => {
+            [this.avatarModal, this.addFriendModal, this.friendRequestsModal, this.createGroupModal, this.groupMembersModal].forEach((modal) => {
                 if (event.target === modal) {
                     modal.style.display = 'none';
                 }
@@ -131,11 +142,77 @@ class ChatApp {
     }
 
     closeAllModals() {
-        [this.addFriendModal, this.friendRequestsModal, this.createGroupModal, this.groupMembersModal].forEach((modal) => {
+        [this.avatarModal, this.addFriendModal, this.friendRequestsModal, this.createGroupModal, this.groupMembersModal].forEach((modal) => {
             if (modal) {
                 modal.style.display = 'none';
             }
         });
+    }
+
+    getInitials(label) {
+        return (label || '?')
+            .trim()
+            .split(/\s+/)
+            .slice(0, 2)
+            .map((part) => part[0] || '')
+            .join('')
+            .toUpperCase();
+    }
+
+    createAvatarElement(entity, className = 'avatar') {
+        const avatar = document.createElement('div');
+        avatar.className = className;
+        const label = entity?.display_name || entity?.name || entity?.username || '?';
+        if (entity?.avatar_url) {
+            const image = document.createElement('img');
+            image.src = entity.avatar_url;
+            image.alt = label;
+            avatar.appendChild(image);
+        } else {
+            avatar.textContent = this.getInitials(label);
+        }
+        return avatar;
+    }
+
+    renderCurrentUserSummary() {
+        const welcome = document.getElementById('welcome-message');
+        if (!welcome || !this.currentUser) {
+            return;
+        }
+        welcome.innerHTML = '';
+        const avatar = this.createAvatarElement(this.currentUser, 'avatar avatar-sm');
+        const textWrap = document.createElement('div');
+        textWrap.className = 'welcome-copy';
+        const name = document.createElement('div');
+        name.textContent = this.currentUser.display_name;
+        const username = document.createElement('div');
+        username.className = 'welcome-username';
+        username.textContent = `@${this.currentUser.username}`;
+        textWrap.appendChild(name);
+        textWrap.appendChild(username);
+        welcome.appendChild(avatar);
+        welcome.appendChild(textWrap);
+    }
+
+    renderAvatarPreview() {
+        if (!this.avatarPreview) {
+            return;
+        }
+        if (this.avatarPreviewUrl) {
+            URL.revokeObjectURL(this.avatarPreviewUrl);
+            this.avatarPreviewUrl = null;
+        }
+        this.avatarPreview.innerHTML = '';
+        const file = this.avatarFileInput?.files?.[0];
+        if (file) {
+            this.avatarPreviewUrl = URL.createObjectURL(file);
+            this.avatarPreview.appendChild(this.createAvatarElement({
+                display_name: this.currentUser?.display_name,
+                avatar_url: this.avatarPreviewUrl
+            }, 'avatar avatar-xl'));
+            return;
+        }
+        this.avatarPreview.appendChild(this.createAvatarElement(this.currentUser, 'avatar avatar-xl'));
     }
 
     async apiFetch(url, options = {}) {
@@ -224,7 +301,7 @@ class ChatApp {
             }
         });
 
-        this.socket.on('message', (message) => this.displayMessage(message, true));
+        this.socket.on('message', (message) => this.renderMessage(message, true));
     }
 
     async loadChats() {
@@ -245,15 +322,20 @@ class ChatApp {
                 li.dataset.userId = chat.user_id;
             }
 
+            const contentWrap = document.createElement('div');
+            contentWrap.className = 'chat-list-item-main';
+            contentWrap.appendChild(this.createAvatarElement(chat, 'avatar avatar-sm'));
+
             const title = document.createElement('span');
             title.className = 'chat-list-title';
             title.textContent = chat.name;
+            contentWrap.appendChild(title);
 
             const badge = document.createElement('span');
             badge.className = `chat-badge ${chat.chat_type}`;
             badge.textContent = chat.chat_type === 'group' ? '群組' : '好友';
 
-            li.appendChild(title);
+            li.appendChild(contentWrap);
             li.appendChild(badge);
             li.addEventListener('click', () => {
                 window.location.hash = `#${chat.chat_type}/${chat.id}`;
@@ -337,7 +419,7 @@ class ChatApp {
             data.messages
                 .sort((a, b) => a.timestamp - b.timestamp)
                 .forEach((message) => {
-                    this.displayMessage(message, false);
+                    this.renderMessage(message, false);
                 });
         } finally {
             this.loadingElem.style.display = 'none';
@@ -432,6 +514,70 @@ class ChatApp {
         this.messagesDiv.scrollTop = this.messagesDiv.scrollHeight;
     }
 
+    async renderMessage(message, notify) {
+        const emptyState = this.messagesDiv.querySelector('.empty-state');
+        if (emptyState) {
+            emptyState.remove();
+        }
+
+        const isMe = this.currentUser && String(message.author) === String(this.currentUser.id);
+        let authorUser = this.currentUser;
+        let authorName = this.currentUser?.display_name || `${message.author}`;
+
+        if (!isMe) {
+            try {
+                const user = await this.getUser(message.author);
+                authorUser = user;
+                authorName = user ? user.display_name : `${message.author}`;
+            } catch (error) {
+                console.error(error);
+                authorUser = null;
+                authorName = `${message.author}`;
+            }
+        }
+
+        const currentChatId = this.currentChat ? String(this.currentChat.id) : null;
+        if (!currentChatId || String(message.chat_id) !== currentChatId) {
+            if (!notify || isMe) {
+                return;
+            }
+            const chatLinkType = message.is_group ? 'group' : 'user';
+            this.showToast(authorName, message.content, () => {
+                window.location.hash = `#${chatLinkType}/${message.chat_id}`;
+            }, 'blue');
+            return;
+        }
+
+        const el = document.createElement('div');
+        el.className = `message ${isMe ? 'outgoing' : 'incoming'}`;
+        if (!isMe) {
+            el.appendChild(this.createAvatarElement(authorUser, 'avatar avatar-sm message-avatar'));
+        }
+
+        const body = document.createElement('div');
+        body.className = 'message-body';
+
+        const author = document.createElement('span');
+        author.className = 'message-author';
+        author.textContent = isMe ? 'You' : authorName;
+
+        const content = document.createElement('div');
+        content.className = 'message-content';
+        content.textContent = message.content;
+
+        const time = document.createElement('span');
+        time.className = 'message-time';
+        time.textContent = this.formatMessageTime(message.timestamp);
+
+        body.appendChild(author);
+        body.appendChild(content);
+        body.appendChild(time);
+        el.appendChild(body);
+
+        this.messagesDiv.appendChild(el);
+        this.messagesDiv.scrollTop = this.messagesDiv.scrollHeight;
+    }
+
     formatMessageTime(timestamp) {
         if (!timestamp) {
             return '';
@@ -442,6 +588,42 @@ class ChatApp {
             return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         }
         return `${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    }
+
+    async uploadAvatar() {
+        const file = this.avatarFileInput?.files?.[0];
+        if (!file) {
+            this.handleError('請先選擇圖片');
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('token', this.token);
+        formData.append('avatar', file);
+
+        try {
+            const data = await this.apiFetch('/api/profile/avatar', {
+                method: 'POST',
+                body: formData
+            });
+            this.currentUser = {
+                ...this.currentUser,
+                avatar_path: data.avatar_path,
+                avatar_url: data.avatar_url
+            };
+            this.cachedUsers.set(this.currentUser.id, this.currentUser);
+            this.renderCurrentUserSummary();
+            this.renderAvatarPreview();
+            this.avatarFileInput.value = '';
+            this.closeAllModals();
+            await this.loadChats();
+            if (this.currentChat?.chat_type === 'group') {
+                await this.loadGroupMembers();
+            }
+            this.showToast('頭像', data.message, null, 'green');
+        } catch (error) {
+            this.handleError(error.message, error);
+        }
     }
 
     async sendFriendRequest() {
@@ -576,11 +758,19 @@ class ChatApp {
             const li = document.createElement('li');
 
             const info = document.createElement('div');
+            info.className = 'member-info';
             info.innerHTML = `
-                <strong>${member.name || member.username}</strong>
+                <div class="avatar avatar-sm">${this.getInitials(member.name || member.username)}</div>
+                <div><strong>${member.name || member.username}</strong>
                 <div class="list-subtext">@${member.username} · ${member.role}</div>
-            `;
+                </div>`;
 
+            if (member.avatar_url) {
+                const avatar = info.querySelector('.avatar');
+                if (avatar) {
+                    avatar.innerHTML = `<img src="${member.avatar_url}" alt="${member.name || member.username}">`;
+                }
+            }
             li.appendChild(info);
 
             if (isOwner && String(member.id) !== String(this.currentUser.id)) {
