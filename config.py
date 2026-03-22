@@ -1,7 +1,7 @@
 import os
 import json
 version = "0.0.1"
-config_version = 1
+config_version = 2
 config_path = 'config.json'
 git_hash = "unknown"
 if git_hash == "unknown":
