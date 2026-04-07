@@ -1,5 +1,29 @@
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,20}$/;
 const THEME_STORAGE_KEY = 'theme_preference';
+const THEME_TOGGLE_ICON_MARKUP = `
+    <span class="theme-toggle__surface" aria-hidden="true">
+        <span class="theme-toggle__sky"></span>
+        <span class="theme-toggle__halo"></span>
+        <span class="theme-toggle__spark theme-toggle__spark--1"></span>
+        <span class="theme-toggle__spark theme-toggle__spark--2"></span>
+        <span class="theme-toggle__spark theme-toggle__spark--3"></span>
+        <svg class="theme-toggle__icon theme-toggle__icon--sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="4.5"></circle>
+            <path d="M12 2.75v2.1"></path>
+            <path d="M12 19.15v2.1"></path>
+            <path d="M4.75 12h2.1"></path>
+            <path d="M17.15 12h2.1"></path>
+            <path d="M6.88 6.88l1.48 1.48"></path>
+            <path d="M15.64 15.64l1.48 1.48"></path>
+            <path d="M6.88 17.12l1.48-1.48"></path>
+            <path d="M15.64 8.36l1.48-1.48"></path>
+        </svg>
+        <svg class="theme-toggle__icon theme-toggle__icon--moon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M15.9 3.9a8.7 8.7 0 1 0 4.2 15.8A9.8 9.8 0 0 1 15.9 3.9Z" fill="currentColor"></path>
+        </svg>
+    </span>
+    <span class="sr-only theme-toggle__label"></span>
+`;
 
 function getPreferredTheme() {
     const savedTheme = localStorage.getItem(THEME_STORAGE_KEY);
@@ -9,20 +33,49 @@ function getPreferredTheme() {
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
 
+function ensureThemeToggleMarkup(button) {
+    if (button.dataset.themeToggleReady === 'true') {
+        return;
+    }
+    button.innerHTML = THEME_TOGGLE_ICON_MARKUP;
+    button.dataset.themeToggleReady = 'true';
+}
+
+function pulseThemeToggle(button, nextTheme) {
+    button.classList.remove('theme-toggle--pulse');
+    button.dataset.themeTransition = nextTheme === 'dark' ? 'to-dark' : 'to-light';
+    void button.offsetWidth;
+    button.classList.add('theme-toggle--pulse');
+}
+
 function applyTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);
     document.querySelectorAll('[data-theme-toggle]').forEach((button) => {
-        button.textContent = theme === 'dark' ? '淺色模式' : '深色模式';
-        button.setAttribute('aria-label', theme === 'dark' ? '切換到淺色模式' : '切換到深色模式');
+        ensureThemeToggleMarkup(button);
+        const nextTheme = theme === 'dark' ? 'light' : 'dark';
+        const label = `Switch to ${nextTheme} mode`;
+        button.dataset.themeState = theme;
+        button.setAttribute('aria-label', label);
+        button.setAttribute('title', label);
+        const hiddenLabel = button.querySelector('.theme-toggle__label');
+        if (hiddenLabel) {
+            hiddenLabel.textContent = label;
+        }
     });
 }
 
 function initializeThemeToggle() {
     applyTheme(getPreferredTheme());
     document.querySelectorAll('[data-theme-toggle]').forEach((button) => {
+        if (button.dataset.themeToggleBound === 'true') {
+            return;
+        }
+        button.dataset.themeToggleBound = 'true';
         button.addEventListener('click', () => {
-            const nextTheme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+            const currentTheme = document.documentElement.getAttribute('data-theme') || getPreferredTheme();
+            const nextTheme = currentTheme === 'dark' ? 'light' : 'dark';
             localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+            pulseThemeToggle(button, nextTheme);
             applyTheme(nextTheme);
         });
     });

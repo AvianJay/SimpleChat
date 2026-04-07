@@ -8,12 +8,14 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}?v=3">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/home.css') }}">
+    <script src="{{ url_for('static', filename='js/user.js') }}?v=3" defer></script>
 </head>
 
 <body>
     <div class="app-background"></div>
-    <button class="theme-toggle" type="button" data-theme-toggle>深色模式</button>
+    <button class="theme-toggle" type="button" data-theme-toggle aria-label="Toggle theme"></button>
     <div class="home-container">
         <h1 class="home-title">歡迎來到 SimpleChat</h1>
         <p class="home-subtitle">一個簡單、快速且現代化的即時聊天應用程式。<br>立即開始與朋友聯繫！</p>

@@ -8,14 +8,14 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
-    <script src="{{ url_for('static', filename='js/user.js') }}?v=2" defer></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}?v=3">
+    <script src="{{ url_for('static', filename='js/user.js') }}?v=3" defer></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/auth.css') }}">
 </head>
 
 <body>
     <div class="app-background"></div>
-    <button class="theme-toggle" type="button" data-theme-toggle>深色模式</button>
+    <button class="theme-toggle" type="button" data-theme-toggle aria-label="Toggle theme"></button>
     <div class="auth-container">
         <h2 class="auth-title">建立帳號</h2>
         <form id="register_form" onsubmit="event.preventDefault(); register();">
