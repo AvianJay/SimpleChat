@@ -31,6 +31,7 @@ default_config = {
     "vapid_public_key": None,
 }
 _config = None
+_config_needs_save = False
 
 try:
     if os.path.exists(config_path):
@@ -39,28 +40,38 @@ try:
         if not isinstance(_config, dict):
             print("Config file is not a valid JSON object, resetting to default config.")
             _config = default_config.copy()
+            _config_needs_save = True
         for key in _config.keys():
             # Skip type checking for None values in default config
             if default_config.get(key) is not None and not isinstance(_config[key], type(default_config[key])):
                 print(f"Config key '{key}' has an invalid type, resetting to default value.")
                 _config[key] = default_config[key]
+                _config_needs_save = True
         if "config_version" not in _config:
             print("Config file does not have 'config_version', resetting to default config.")
             _config = default_config.copy()
+            _config_needs_save = True
     else:
         _config = default_config.copy()
+        _config_needs_save = True
         json.dump(_config, open(config_path, "w"), indent=4)
 except ValueError:
     _config = default_config.copy()
+    _config_needs_save = True
     json.dump(_config, open(config_path, "w"), indent=4)
+
+for key, value in default_config.items():
+    if key not in _config:
+        _config[key] = value
+        _config_needs_save = True
 
 if _config.get("config_version", 0) < config_version:
     print("Updating config file from version", _config.get("config_version", 0), "to version", config_version)
-    for k in default_config.keys():
-        if _config.get(k) is None:
-            _config[k] = default_config[k]
     _config["config_version"] = config_version
-    print("Saving...")
+    _config_needs_save = True
+
+if _config_needs_save:
+    print("Saving config file...")
     json.dump(_config, open(config_path, "w"), indent=4)
     print("Done.")
 

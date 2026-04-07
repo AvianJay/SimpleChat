@@ -1,4 +1,4 @@
-from flask import Flask, request, render_template, jsonify
+from flask import Flask, request, render_template, jsonify, has_request_context
 from flask_socketio import SocketIO, emit, join_room
 from flask import session
 import database
@@ -15,7 +15,9 @@ import threading
 import asyncio
 from collections import defaultdict, deque
 from functools import wraps
+from urllib.parse import urlparse
 from werkzeug.utils import secure_filename
+from werkzeug.middleware.proxy_fix import ProxyFix
 from hypercorn.asyncio import serve
 from hypercorn.config import Config
 from hypercorn.middleware import AsyncioWSGIMiddleware
@@ -29,8 +31,10 @@ RATE_LIMIT_LOCK = threading.Lock()
 AVATAR_UPLOAD_DIR = os.path.join('static', 'uploads', 'avatars')
 ALLOWED_AVATAR_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.webp', '.gif'}
 MAX_AVATAR_SIZE = 2 * 1024 * 1024
+LOOPBACK_HOSTS = {'127.0.0.1', 'localhost', '::1'}
 
 app = Flask(__name__)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 # secret key required for flask session and socketio session management
 app.secret_key = os.environ.get('SECRET_KEY') or os.urandom(24)
 app.config['MAX_CONTENT_LENGTH'] = MAX_AVATAR_SIZE
@@ -200,12 +204,37 @@ def get_graph_mailer():
     )
 
 
+def is_loopback_url(url):
+    if not url:
+        return False
+    try:
+        hostname = urlparse(url).hostname
+    except ValueError:
+        return False
+    return hostname in LOOPBACK_HOSTS
+
+
+def get_public_base_url():
+    configured_base_url = (config('public_base_url') or '').strip()
+    if configured_base_url and not is_loopback_url(configured_base_url):
+        return configured_base_url.rstrip('/')
+    if has_request_context():
+        return request.host_url.rstrip('/')
+    if configured_base_url:
+        return configured_base_url.rstrip('/')
+    return 'http://127.0.0.1:5000'
+
+
+def build_verification_url(verification_token):
+    return f"{get_public_base_url()}/verify_email?token={verification_token}"
+
+
 def send_verification_email(user, verification_token):
     mailer = get_graph_mailer()
     if mailer is None:
         return False, 'Mail service is not configured'
 
-    verification_url = f"{config('public_base_url').rstrip('/')}/verify_email?token={verification_token}"
+    verification_url = build_verification_url(verification_token)
     message_args = {
         'subject': 'Verify your SimpleChat email',
         'toRecipients': [{'address': user[2], 'name': get_user_display_name(user)}],
